@@ -20,8 +20,10 @@ context* init_context()
     ctx->volume_origin[1] = 0;
     ctx->volume_origin[2] = 0;
 
-    ctx->voxel_size = 0.05;
+    ctx->voxel_size = 0.1;
     ctx->trunc_margin = 5 * ctx->voxel_size;
+
+    ctx->tsdf_threshold = 1.0f;
 
     int voxel_num = ctx->resolution[0] * ctx->resolution[1] * ctx->resolution[2];
 
@@ -39,7 +41,7 @@ context* init_context()
 
 __global__ void dequantization_kernel(context* ctx, uint8_t *input_depth, float *output_depth)
 {
-    int x = threadIdx.x + blockIdx.x * blockDim.x;
+    int x = blockIdx.x * blockDim.x;
     int y = threadIdx.y + blockIdx.y * blockDim.y;
     int idx = x + y * blockDim.x * gridDim.x;
 
@@ -76,8 +78,8 @@ __global__ void integrate_kernel(context* ctx, int cam_idx)
     float* R = ctx->krt[cam_idx].R;
     float* T = ctx->krt[cam_idx].T;
 
-    int x_voxel = threadIdx.x + blockIdx.x * blockDim.x;
-    int y_voxel = threadIdx.y + blockIdx.y * blockDim.y;
+    int z_voxel = blockIdx.x;
+    int y_voxel = threadIdx.x;
 
     int dim_x = ctx->resolution[0];
     int dim_y = ctx->resolution[1];
@@ -85,9 +87,9 @@ __global__ void integrate_kernel(context* ctx, int cam_idx)
 
     float world_x, world_y, world_z;
     float camera_x, camera_y, camera_z;
-    int pix_x, pix_y;
+    int pix_x, pix_y;    
 
-    for(int z_voxel = 0; z_voxel < ctx->resolution[2]; z_voxel++) {
+    for(int x_voxel = 0; x_voxel < ctx->resolution[2]; x_voxel++) {
         // convert voxel index to world points position
         world_x = x_voxel * ctx->voxel_size;
         world_y = y_voxel * ctx->voxel_size;
@@ -133,15 +135,38 @@ __global__ void integrate_kernel(context* ctx, int cam_idx)
 // ====================================================================
 // core function, integrate an depth frame to volume
 // ====================================================================
-void Integrate(context* ctx, int cam_idx, uint8_t *in_buf_depth, float* out_Volume)
+void Integrate(context* ctx, int cam_idx, uint8_t *in_buf_depth)
 {
+#ifdef TimeEventRecord
+    cudaEvent_t start, end;
+    cudaEventCreate(&start);
+    cudaEventCreate(&end);
+
+    cudaEventRecord(start);
+#endif
+
     cudaMemcpy(ctx->in_buf_depth, in_buf_depth, WIDTH * HEIGHT * sizeof(uint8_t), cudaMemcpyHostToDevice);
     dequantization(ctx, ctx->in_buf_depth, ctx->depth);
 
-    dim3 blocks(ctx->resolution[0] / 20, ctx->resolution[1] / 25);
-    dim3 threads(20, 25);
+    integrate_kernel<<<ctx->resolution[2], ctx->resolution[1]>>>(ctx, cam_idx);
 
-    integrate_kernel<<<blocks, threads>>>(ctx, cam_idx);
+#ifdef TimeEventRecord
+    cudaEventRecord(end);
+    cudaEventSynchronize(end);
+    float millisecond = 0;
+    cudaEventElapsedTime(&millisecond, start, end);
+    printf("\t Integrate time = %f ms\n", millisecond);
+#endif
+}
+
+
+void memcpy_volume_to_cpu(context* ctx, float* tsdf_out, float* weight_out)
+{
+    int voxel_num = ctx->resolution[0] * ctx->resolution[1] * ctx->resolution[2];
+
+    printf("voxel num: %d\n", voxel_num);
+    cudaMemcpy(tsdf_out, ctx->tsdf_voxel, voxel_num * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(weight_out, ctx->weight_voxel, voxel_num * sizeof(float), cudaMemcpyDeviceToHost);
 }
 
 

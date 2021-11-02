@@ -3,6 +3,8 @@
 #include "assert.h"
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
 
 typedef struct KRT
 {
@@ -28,6 +30,9 @@ typedef struct context
     float voxel_size;
     float trunc_margin;
 
+    float tsdf_threshold = 0.2f;
+    float weight_threshhold = 0.0f;
+
     uint8_t* in_buf_depth; // input depth image
     float* depth; // depth after dequantization
 
@@ -35,3 +40,5 @@ typedef struct context
 
 
 void load_camera_params(context *ctx);
+
+void save_volume_to_ply(context *ctx, char *filename, float* tsdf, float* weight);

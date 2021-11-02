@@ -13,7 +13,9 @@ int main(int argc, char** argv)
     uint8_t *in_buf_depth = new uint8_t[WIDTH * HEIGHT * sizeof(uint8_t)];
     uint8_t *in_buf_color = new uint8_t[WIDTH * HEIGHT * sizeof(uint8_t) * 3];
 
-    float* volume = new float[ctx->resolution[0] * ctx->resolution[1], ctx->resolution[2]];
+    int voxel_num = ctx->resolution[0] * ctx->resolution[1] * ctx->resolution[2];
+    float* tsdf_cpu = new float[voxel_num];
+    float* weight_cpu = new float[voxel_num];
 
     for(int i = 0; i < camera_num; i++) {
         // read an depth image
@@ -26,23 +28,25 @@ int main(int argc, char** argv)
         fread(in_buf_depth, 1, WIDTH * HEIGHT, depth_fp);
         fread(in_buf_color, 1, WIDTH * HEIGHT * 3, depth_fp);
 
-
         // integrate current frame to volume in GPU
-        for(int k = 0; k<100; k++) {
-            Integrate(ctx, i, in_buf_depth, volume);
+        for(int k = 0; k<1; k++) {
+            Integrate(ctx, i, in_buf_depth);
         }
     }
 
     // memcpy volume to CPU
+    memcpy_volume_to_cpu(ctx, tsdf_cpu, weight_cpu);
+
+    char ply_filename[200] = "../fusion.ply";
+    save_volume_to_ply(ctx, ply_filename, tsdf_cpu, weight_cpu);
     
 
 
     // write point cloud to local .ply file
-
-
     release_context(ctx);
     delete [] in_buf_depth;
     delete [] in_buf_color;
-    delete [] volume;
+    delete [] tsdf_cpu;
+    delete [] weight_cpu;
     return 0;
 }
