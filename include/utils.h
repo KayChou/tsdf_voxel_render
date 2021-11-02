@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <algorithm>
 #include <math.h>
 
 typedef struct KRT
@@ -22,10 +23,11 @@ typedef struct context
     float min_depth, max_depth;
 
     int resolution[3];
-    float volume_origin[3];
 
     float* tsdf_voxel;
     float* weight_voxel;
+
+    float* pcd;
 
     float voxel_size;
     float trunc_margin;
@@ -42,3 +44,5 @@ typedef struct context
 void load_camera_params(context *ctx);
 
 void save_volume_to_ply(context *ctx, char *filename, float* tsdf, float* weight);
+
+void save_pcd_as_ply(char* filename, float* pcd);

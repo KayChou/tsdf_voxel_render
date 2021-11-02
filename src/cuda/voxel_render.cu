@@ -16,11 +16,7 @@ context* init_context()
     ctx->resolution[1] = 500;
     ctx->resolution[2] = 500;
 
-    ctx->volume_origin[0] = 0;
-    ctx->volume_origin[1] = 0;
-    ctx->volume_origin[2] = 0;
-
-    ctx->voxel_size = 0.1;
+    ctx->voxel_size = 0.05;
     ctx->trunc_margin = 5 * ctx->voxel_size;
 
     ctx->tsdf_threshold = 1.0f;
@@ -31,6 +27,7 @@ context* init_context()
     cudaMalloc((void**)&ctx->weight_voxel, voxel_num * sizeof(float));
     cudaMalloc((void**)&ctx->in_buf_depth, WIDTH * HEIGHT * sizeof(uint8_t));
     cudaMalloc((void**)&ctx->depth, WIDTH * HEIGHT * sizeof(float));
+    cudaMalloc((void**)&ctx->pcd, 3 * WIDTH * HEIGHT * sizeof(float));
 
     cudaMemset(ctx->tsdf_voxel, 1, voxel_num * sizeof(float));
     cudaMemset(ctx->weight_voxel, 0, voxel_num * sizeof(float));
@@ -41,7 +38,7 @@ context* init_context()
 
 __global__ void dequantization_kernel(context* ctx, uint8_t *input_depth, float *output_depth)
 {
-    int x = blockIdx.x * blockDim.x;
+    int x = threadIdx.x + blockIdx.x * blockDim.x;
     int y = threadIdx.y + blockIdx.y * blockDim.y;
     int idx = x + y * blockDim.x * gridDim.x;
 
@@ -83,7 +80,6 @@ __global__ void integrate_kernel(context* ctx, int cam_idx)
 
     int dim_x = ctx->resolution[0];
     int dim_y = ctx->resolution[1];
-    int dim_z = ctx->resolution[2];
 
     float world_x, world_y, world_z;
     float camera_x, camera_y, camera_z;
@@ -91,9 +87,9 @@ __global__ void integrate_kernel(context* ctx, int cam_idx)
 
     for(int x_voxel = 0; x_voxel < ctx->resolution[2]; x_voxel++) {
         // convert voxel index to world points position
-        world_x = x_voxel * ctx->voxel_size;
-        world_y = y_voxel * ctx->voxel_size;
-        world_z = z_voxel * ctx->voxel_size;
+        world_x = world_x0 + x_voxel * ctx->voxel_size;
+        world_y = world_y0 + y_voxel * ctx->voxel_size;
+        world_z = world_z0 + z_voxel * ctx->voxel_size;
 
         // convert point from world to camera coordinate
         world_x -= T[0];
@@ -160,6 +156,50 @@ void Integrate(context* ctx, int cam_idx, uint8_t *in_buf_depth)
 }
 
 
+__global__ void depth_to_world_pcd(context* ctx, int cam_idx) 
+{
+    float fx = ctx->krt[cam_idx].fx;
+    float fy = ctx->krt[cam_idx].fy;
+    float cx = ctx->krt[cam_idx].cx;
+    float cy = ctx->krt[cam_idx].cy;
+
+    float* R = ctx->krt[cam_idx].R;
+    float* T = ctx->krt[cam_idx].T;
+
+    int x = threadIdx.x + blockIdx.x * blockDim.x;
+    int y = threadIdx.y + blockIdx.y * blockDim.y;
+    int idx = x + y * blockDim.x * gridDim.x;
+
+    float depth_val = ctx->depth[idx];
+
+    float camera_x = (x - cx) * depth_val / fx;
+    float camera_y = (y - cy) * depth_val / fy;
+    float camera_z = depth_val;
+
+    float world_x = R[0] * camera_x + R[3] * camera_y + R[6] * camera_z + T[0];
+    float world_y = R[1] * camera_x + R[4] * camera_y + R[7] * camera_z + T[1];
+    float world_z = R[2] * camera_x + R[5] * camera_y + R[8] * camera_z + T[2];
+
+    ctx->pcd[3 * idx + 0] = world_x;
+    ctx->pcd[3 * idx + 1] = world_y;
+    ctx->pcd[3 * idx + 2] = world_z;
+}
+
+
+void get_pcd_in_world(context* ctx, uint8_t *in_buf_depth, float *pcd, int cam_idx)
+{
+    cudaMemcpy(ctx->in_buf_depth, in_buf_depth, WIDTH * HEIGHT * sizeof(uint8_t), cudaMemcpyHostToDevice);
+    dequantization(ctx, ctx->in_buf_depth, ctx->depth);
+
+    dim3 blocks(WIDTH / 32, HEIGHT / 24);
+    dim3 threads(32, 24);
+
+    depth_to_world_pcd<<<blocks, threads>>>(ctx, cam_idx);
+
+    cudaMemcpy(pcd, ctx->pcd, 3 * WIDTH * HEIGHT * sizeof(float), cudaMemcpyDeviceToHost);
+}
+
+
 void memcpy_volume_to_cpu(context* ctx, float* tsdf_out, float* weight_out)
 {
     int voxel_num = ctx->resolution[0] * ctx->resolution[1] * ctx->resolution[2];
@@ -179,5 +219,6 @@ void release_context(context* ctx)
     cudaFree(ctx->weight_voxel);
     cudaFree(ctx->in_buf_depth);
     cudaFree(ctx->depth);
+    cudaFree(ctx->pcd);
     cudaFree(ctx);
 }
