@@ -16,7 +16,7 @@ context* init_context()
     ctx->resolution[1] = 500;
     ctx->resolution[2] = 500;
 
-    ctx->voxel_size = 0.05;
+    ctx->voxel_size = 0.2;
     ctx->trunc_margin = 5 * ctx->voxel_size;
 
     ctx->tsdf_threshold = 1.0f;
@@ -41,6 +41,11 @@ __global__ void dequantization_kernel(context* ctx, uint8_t *input_depth, float 
     int x = threadIdx.x + blockIdx.x * blockDim.x;
     int y = threadIdx.y + blockIdx.y * blockDim.y;
     int idx = x + y * blockDim.x * gridDim.x;
+
+    if(input_depth[idx] == 0) {
+        output_depth[idx] = 0;
+        return;
+    }
 
     float maxdisp = fB / ctx->min_depth;
     float mindisp = fB / ctx->max_depth;
@@ -112,6 +117,9 @@ __global__ void integrate_kernel(context* ctx, int cam_idx)
         }
 
         float depth_value = ctx->depth[pix_y * WIDTH + pix_x];
+        if(depth_value == 0) {
+            continue;
+        }
 
         float diff = depth_value - camera_z;
         if (diff <= -ctx->trunc_margin) {
@@ -171,6 +179,9 @@ __global__ void depth_to_world_pcd(context* ctx, int cam_idx)
     int idx = x + y * blockDim.x * gridDim.x;
 
     float depth_val = ctx->depth[idx];
+    if(depth_val == 0) {
+        return;
+    }
 
     float camera_x = (x - cx) * depth_val / fx;
     float camera_y = (y - cy) * depth_val / fy;

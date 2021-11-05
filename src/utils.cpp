@@ -17,22 +17,22 @@ void load_camera_params(context *ctx)
         assert(ctx->height == HEIGHT);
 
         // K matrix
-        fscanf(file, "%s %f %f %f %f\n", temps, &ctx->krt[cam_idx].fx, // fx
-                                                &ctx->krt[cam_idx].fy, // fy
-                                                &ctx->krt[cam_idx].cx, // x0
-                                                &ctx->krt[cam_idx].cy);// y0
+        fscanf(file, "%s %f %f %f %f\n", temps, &ctx->krt[camID].fx, // fx
+                                                &ctx->krt[camID].fy, // fy
+                                                &ctx->krt[camID].cx, // x0
+                                                &ctx->krt[camID].cy);// y0
 
         // R matrix
         fscanf(file, "%s", temps);
         for (int i = 0; i < 9; i++) {
-            fscanf(file, " %f", &ctx->krt[cam_idx].R[i]);
+            fscanf(file, " %f", &ctx->krt[camID].R[i]);
         }
         fgetc(file);
 
         // world position
-        fscanf(file, "%s %f %f %f\n", temps, &ctx->krt[cam_idx].T[0], 
-                                             &ctx->krt[cam_idx].T[1], 
-                                             &ctx->krt[cam_idx].T[2]);
+        fscanf(file, "%s %f %f %f\n", temps, &ctx->krt[camID].T[0], 
+                                             &ctx->krt[camID].T[1], 
+                                             &ctx->krt[camID].T[2]);
 
         // printf("world position: %f %f %f\n", ctx->krt[cam_idx].T[0], ctx->krt[cam_idx].T[1], ctx->krt[cam_idx].T[2]);
     }

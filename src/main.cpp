@@ -19,11 +19,11 @@ int main(int argc, char** argv)
 
     float* point_cloud = new float[WIDTH * HEIGHT * 3];
 
-    for(int i = 0; i < 2; i++) {
+    for(int i = 0; i < camera_num; i++) {
         // read RGBD image
         sprintf(depth_filename, "%s/depth_yuv/%d.yuv", data_path, i);
         sprintf(color_filename, "%s/image_yuv/%d.yuv", data_path, i);
-        printf("Integrating %2d/%d: %s\n", i + 1, camera_num, color_filename);
+        // printf("Integrating %2d/%d: %s\n", i + 1, camera_num, color_filename);
 
         FILE* depth_fp = fopen(depth_filename, "rb");
         FILE* color_fp = fopen(color_filename, "rb");
@@ -33,12 +33,13 @@ int main(int argc, char** argv)
         // integrate current frame to volume in GPU
         Integrate(ctx, i, in_buf_depth);
 
-        // // convert depth to world coordinate and save
-        // get_pcd_in_world(ctx, in_buf_depth, point_cloud, i);
-
-        // char pcd_filename[200];
-        // sprintf(pcd_filename, "../camera_%d.ply", i);
-        // save_pcd_as_ply(pcd_filename, point_cloud);
+#ifdef GEN_PCD_OF_EACH_CAM
+        // convert depth to world coordinate and save
+        get_pcd_in_world(ctx, in_buf_depth, point_cloud, i);
+        char pcd_filename[200];
+        sprintf(pcd_filename, "../results/camera_%d.ply", i);
+        save_pcd_as_ply(pcd_filename, point_cloud);
+#endif
 
         fclose(depth_fp);
         fclose(color_fp);
@@ -46,7 +47,7 @@ int main(int argc, char** argv)
 
     // memcpy volume to CPU
     memcpy_volume_to_cpu(ctx, tsdf_cpu, weight_cpu);
-    save_volume_to_ply(ctx, "../fusion.ply", tsdf_cpu, weight_cpu);
+    save_volume_to_ply(ctx, "../results/fusion.ply", tsdf_cpu, weight_cpu);
 
     release_context(ctx);
     delete [] in_buf_depth;
