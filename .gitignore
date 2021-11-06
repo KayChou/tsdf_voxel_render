@@ -34,3 +34,4 @@
 build/
 *.ply
 results/
+.vscode/

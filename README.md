@@ -21,6 +21,12 @@
    - 截断距离：当 sdf 在截断距离 u 内，tsdf(p) = sdf(p) / u，否则如果sdf > 0， tsdf = 1, sdf < 0, tsdf = -1
    - 计算权重
 
+## Demo
+
+<div align="center">
+<img src=https://notes.sjtu.edu.cn/uploads/upload_1f7c2df7584611c8a137c14db0cc7434.png width=40% />
+</div>
+
 
 ## 编译
 

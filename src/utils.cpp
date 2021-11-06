@@ -40,7 +40,7 @@ void load_camera_params(context *ctx)
 }
 
 
-void save_volume_to_ply(context *ctx, char *filename, float* tsdf, float* weight)
+void save_volume_to_ply(context *ctx, char *filename, float* tsdf, float* weight, uint8_t* rgb)
 {
     int dim_x = ctx->resolution[0];
     int dim_y = ctx->resolution[1];
@@ -62,11 +62,14 @@ void save_volume_to_ply(context *ctx, char *filename, float* tsdf, float* weight
     // Create header for .ply file
     FILE *fp = fopen(filename, "w");
     fprintf(fp, "ply\n");
-    fprintf(fp, "format binary_little_endian 1.0\n");
+    fprintf(fp, "format ascii 1.0\n");
     fprintf(fp, "element vertex %d\n", num_pts);
     fprintf(fp, "property float x\n");
     fprintf(fp, "property float y\n");
     fprintf(fp, "property float z\n");
+    fprintf(fp, "property uchar red\n");
+    fprintf(fp, "property uchar green\n");
+    fprintf(fp, "property uchar blue\n");
     fprintf(fp, "end_header\n");
 
     for(int i = 0; i < voxel_num; i++) {
@@ -75,13 +78,20 @@ void save_volume_to_ply(context *ctx, char *filename, float* tsdf, float* weight
             int y = floor((i - (z * dim_x * dim_y)) / dim_x);
             int x = i - (z * dim_x * dim_y) - y * dim_x;
             
-            float pt_x = (float)(x * ctx->voxel_size + world_x0);
-            float pt_y = (float)(y * ctx->voxel_size + world_y0);
-            float pt_z = (float)(z * ctx->voxel_size + world_z0);
+            float pt_x = (float)(x * ctx->voxel_size + world_x0) - dim_x * ctx->voxel_size / 2;
+            float pt_y = (float)(y * ctx->voxel_size + world_y0) - dim_y * ctx->voxel_size / 2;
+            float pt_z = (float)(z * ctx->voxel_size + world_z0) - dim_z * ctx->voxel_size / 2;
 
-            fwrite(&pt_x, sizeof(float), 1, fp);
-            fwrite(&pt_y, sizeof(float), 1, fp);
-            fwrite(&pt_z, sizeof(float), 1, fp);
+            uint8_t r = rgb[3 * i + 0];
+            uint8_t g = rgb[3 * i + 1];
+            uint8_t b = rgb[3 * i + 2];
+
+            fprintf(fp, "%f ", pt_x);
+            fprintf(fp, "%f ", pt_y);
+            fprintf(fp, "%f ", pt_z);
+            fprintf(fp, "%d ", r);
+            fprintf(fp, "%d ", g);
+            fprintf(fp, "%d\n", b);
         }
     }
     fclose(fp);

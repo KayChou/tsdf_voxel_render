@@ -26,6 +26,7 @@ typedef struct context
 
     float* tsdf_voxel;
     float* weight_voxel;
+    uint8_t* color_voxel;
 
     float* pcd;
 
@@ -36,6 +37,7 @@ typedef struct context
     float weight_threshhold = 0.0f;
 
     uint8_t* in_buf_depth; // input depth image
+    uint8_t* in_buf_color;
     float* depth; // depth after dequantization
 
 } Krt;
@@ -43,6 +45,6 @@ typedef struct context
 
 void load_camera_params(context *ctx);
 
-void save_volume_to_ply(context *ctx, char *filename, float* tsdf, float* weight);
+void save_volume_to_ply(context *ctx, char *filename, float* tsdf, float* weight, uint8_t* color);
 
 void save_pcd_as_ply(char* filename, float* pcd);
