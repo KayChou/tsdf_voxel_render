@@ -129,10 +129,10 @@ __global__ void integrate_kernel(context* ctx)
                 continue;
             }
 
-            float depth_value = ctx->depth[WIDTH * HEIGHT + pix_idx];
-            new_r = ctx->in_buf_color[WIDTH * HEIGHT * 3 + 3 * pix_idx + 0];
-            new_g = ctx->in_buf_color[WIDTH * HEIGHT * 3 + 3 * pix_idx + 1];
-            new_b = ctx->in_buf_color[WIDTH * HEIGHT * 3 + 3 * pix_idx + 2];
+            float depth_value = ctx->depth[WIDTH * HEIGHT * cam_idx + pix_idx];
+            new_r = ctx->in_buf_color[WIDTH * HEIGHT * 3 * cam_idx + 3 * pix_idx + 0];
+            new_g = ctx->in_buf_color[WIDTH * HEIGHT * 3 * cam_idx + 3 * pix_idx + 1];
+            new_b = ctx->in_buf_color[WIDTH * HEIGHT * 3 * cam_idx + 3 * pix_idx + 2];
             if(depth_value == 0 || new_r == 0 || new_g == 0 || new_b == 0) {
                 continue;
             }
@@ -166,7 +166,7 @@ __global__ void integrate_kernel(context* ctx)
 // ====================================================================
 // core function, integrate an depth frame to volume
 // ====================================================================
-void Integrate(context* ctx, int cam_idx, uint8_t *in_buf_depth, uint8_t* in_buf_color)
+void Integrate(context* ctx, uint8_t *in_buf_depth, uint8_t* in_buf_color)
 {
 #ifdef TimeEventRecord
     cudaEvent_t start, end;
@@ -180,7 +180,7 @@ void Integrate(context* ctx, int cam_idx, uint8_t *in_buf_depth, uint8_t* in_buf
     cudaMemcpy(ctx->in_buf_color, in_buf_color, CAM_NUM * 3 * WIDTH * HEIGHT * sizeof(uint8_t), cudaMemcpyHostToDevice);
 
     for(int i = 0; i < CAM_NUM; i++) {
-        dequantization(ctx, ctx->in_buf_depth + WIDTH * HEIGHT, ctx->depth + WIDTH * HEIGHT);
+        dequantization(ctx, ctx->in_buf_depth + WIDTH * HEIGHT * i, ctx->depth + WIDTH * HEIGHT * i);
     }
 
     integrate_kernel<<<ctx->resolution[2], ctx->resolution[1]>>>(ctx);
