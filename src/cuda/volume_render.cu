@@ -72,7 +72,9 @@ void Integrate(context* ctx, uint8_t *in_buf_depth, uint8_t* in_buf_color)
         HANDLE_ERROR();
     }
 
-    integrate_kernel<<<ctx->resolution[2], ctx->resolution[1]>>>(ctx);
+    dim3 blocks(DIM_Z / 32, DIM_Y / 32);
+    dim3 threads(32, 32);
+    integrate_kernel<<<blocks, threads>>>(ctx);
     HANDLE_ERROR();
 
 #ifdef TimeEventRecord

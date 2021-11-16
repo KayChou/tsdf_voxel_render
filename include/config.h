@@ -14,10 +14,10 @@
 #define world_y0 -20
 #define world_z0 40
 
-#define DIM_X 800
-#define DIM_Y 800
-#define DIM_Z 800
-#define VOXEL_SIZE 0.05
+#define DIM_X 128
+#define DIM_Y 128
+#define DIM_Z 128
+#define VOXEL_SIZE 0.3
 
 #define TSDF_THRESHOLD 0.5
 #define WEIGHT_THRESHOLD 0.2 * CAM_NUM

@@ -20,8 +20,10 @@ __global__ void dequantization_kernel(context* ctx, uint8_t *input_depth, float 
 
 __global__ void integrate_kernel(context* ctx)
 {
-    int z_voxel = blockIdx.x;
-    int y_voxel = threadIdx.x;
+    // int z_voxel = blockIdx.x;
+    // int y_voxel = threadIdx.x;
+    int z_voxel = threadIdx.x + blockIdx.x * blockDim.x;
+    int y_voxel = threadIdx.y + blockIdx.y * blockDim.y;
 
     int dim_x = ctx->resolution[0];
     int dim_y = ctx->resolution[1];
