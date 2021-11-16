@@ -6,7 +6,7 @@
 #define data_path (char *)"/SSD1/zk/freeview/medialab_20210924/basketball/frames/frame_0"
 #define param_path (char *)"/SSD1/zk/freeview/medialab_20210924/created/para_cameras.txt"
 
-#define CAM_NUM 12
+#define CAM_NUM 3
 #define WIDTH 1920
 #define HEIGHT 1080
 

@@ -46,7 +46,9 @@ int main(int argc, char** argv)
 
     // integrate current frame to volume in GPU
     printf("begin to integrate\n");
-    Integrate(ctx, in_buf_depth, in_buf_color);
+    for(int i = 0; i < 10; i++) {
+        Integrate(ctx, in_buf_depth, in_buf_color);
+    }
 
     // memcpy volume to CPU
     memcpy_volume_to_cpu(ctx, tsdf_cpu, color_cpu);

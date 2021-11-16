@@ -7,6 +7,7 @@ find_package(CUDA)
 add_definitions("-DTimeEventRecord")
 
 INCLUDE_DIRECTORIES("../../include")
+INCLUDE_DIRECTORIES("../../include/cuda")
 
 # nvcc flags -g for debug
 #set(CUDA_NVCC_FLAGS -O3;-G;-g)
