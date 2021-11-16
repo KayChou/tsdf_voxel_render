@@ -15,7 +15,6 @@ int main(int argc, char** argv)
 
     int voxel_num = ctx->resolution[0] * ctx->resolution[1] * ctx->resolution[2];
     float* tsdf_cpu = new float[voxel_num];
-    float* weight_cpu = new float[voxel_num];
     uint8_t* color_cpu = new uint8_t[voxel_num * 3];
 
     float* point_cloud = new float[WIDTH * HEIGHT * 3];
@@ -50,14 +49,13 @@ int main(int argc, char** argv)
     Integrate(ctx, in_buf_depth, in_buf_color);
 
     // memcpy volume to CPU
-    memcpy_volume_to_cpu(ctx, tsdf_cpu, weight_cpu, color_cpu);
-    save_volume_to_ply(ctx, "../results/fusion.ply", tsdf_cpu, weight_cpu, color_cpu);
+    memcpy_volume_to_cpu(ctx, tsdf_cpu, color_cpu);
+    save_volume_to_ply(ctx, "../results/fusion.ply", tsdf_cpu, color_cpu);
 
     release_context(ctx);
     delete [] in_buf_depth;
     delete [] in_buf_color;
     delete [] tsdf_cpu;
-    delete [] weight_cpu;
     delete [] color_cpu;
     delete [] point_cloud;
     return 0;

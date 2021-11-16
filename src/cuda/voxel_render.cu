@@ -27,7 +27,6 @@ context* init_context()
     int voxel_num = ctx->resolution[0] * ctx->resolution[1] * ctx->resolution[2];
 
     cudaMalloc((void**)&ctx->tsdf_voxel, voxel_num * sizeof(float));
-    cudaMalloc((void**)&ctx->weight_voxel, voxel_num * sizeof(float));
     cudaMalloc((void**)&ctx->color_voxel, voxel_num * sizeof(uint8_t) * 3);
 
     cudaMalloc((void**)&ctx->in_buf_depth, CAM_NUM * WIDTH * HEIGHT * sizeof(uint8_t));
@@ -36,7 +35,6 @@ context* init_context()
     cudaMalloc((void**)&ctx->pcd, 3 * WIDTH * HEIGHT * sizeof(float));
 
     cudaMemset(ctx->tsdf_voxel, 1, voxel_num * sizeof(float));
-    cudaMemset(ctx->weight_voxel, 0, voxel_num * sizeof(float));
     cudaMemset(ctx->color_voxel, 0, voxel_num * sizeof(uint8_t) * 3);
 
     return ctx;
@@ -89,10 +87,13 @@ __global__ void integrate_kernel(context* ctx)
     float camera_x, camera_y, camera_z;
     int pix_x, pix_y;
     float old_r, old_g, old_b;
-    float new_r, new_g, new_b; 
+    float new_r, new_g, new_b;
+    float weight;
 
     // each cuda thread handles one volume line(x axis)
     for(int x_voxel = 0; x_voxel < ctx->resolution[2]; x_voxel++) {
+        weight = 0;
+        int voxel_idx = z_voxel * dim_y * dim_x + y_voxel * dim_x + x_voxel;
         // for each voxel, loop for all views
         for(int cam_idx = 0; cam_idx < CAM_NUM; cam_idx++) {
             float fx = ctx->krt[cam_idx].fx;
@@ -142,13 +143,11 @@ __global__ void integrate_kernel(context* ctx)
                 continue;
             }
 
-            int voxel_idx = z_voxel * dim_y * dim_x + y_voxel * dim_x + x_voxel;
             float dist = fmin(1.0f, diff / ctx->trunc_margin);
 
             // update TSDF and weight
-            float weight = ctx->weight_voxel[voxel_idx];
             ctx->tsdf_voxel[voxel_idx] = (ctx->tsdf_voxel[voxel_idx] * weight + dist) / (weight + 1.0f);
-            ctx->weight_voxel[voxel_idx] += 1.0f;
+            weight += 1.0f;
 
             // update color
             old_r = ctx->color_voxel[3 * voxel_idx + 0];
@@ -158,6 +157,10 @@ __global__ void integrate_kernel(context* ctx)
             ctx->color_voxel[3 * voxel_idx + 0] = (uint8_t)fminf((float)(old_r * weight + new_r * 1.0f) / (weight + 1.0f), 255);
             ctx->color_voxel[3 * voxel_idx + 1] = (uint8_t)fminf((float)(old_g * weight + new_g * 1.0f) / (weight + 1.0f), 255);
             ctx->color_voxel[3 * voxel_idx + 2] = (uint8_t)fminf((float)(old_b * weight + new_b * 1.0f) / (weight + 1.0f), 255);
+        }
+
+        if(weight < WEIGHT_THRESHOLD) {
+            ctx->tsdf_voxel[voxel_idx] = 2 * TSDF_THRESHOLD;
         }
     }
 }
@@ -242,13 +245,12 @@ void get_pcd_in_world(context* ctx, uint8_t *in_buf_depth, float *pcd, int cam_i
 }
 
 
-void memcpy_volume_to_cpu(context* ctx, float* tsdf_out, float* weight_out, uint8_t* rgb_out)
+void memcpy_volume_to_cpu(context* ctx, float* tsdf_out, uint8_t* rgb_out)
 {
     int voxel_num = ctx->resolution[0] * ctx->resolution[1] * ctx->resolution[2];
 
     printf("voxel num: %d\n", voxel_num);
     cudaMemcpy(tsdf_out, ctx->tsdf_voxel, voxel_num * sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(weight_out, ctx->weight_voxel, voxel_num * sizeof(float), cudaMemcpyDeviceToHost);
     cudaMemcpy(rgb_out, ctx->color_voxel, voxel_num * sizeof(uint8_t) * 3, cudaMemcpyDeviceToHost);
 }
 
@@ -259,7 +261,6 @@ void memcpy_volume_to_cpu(context* ctx, float* tsdf_out, float* weight_out, uint
 void release_context(context* ctx)
 {
     cudaFree(ctx->tsdf_voxel);
-    cudaFree(ctx->weight_voxel);
     cudaFree(ctx->in_buf_depth);
     cudaFree(ctx->in_buf_color);
     cudaFree(ctx->depth);

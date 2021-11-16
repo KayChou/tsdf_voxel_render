@@ -40,7 +40,7 @@ void load_camera_params(context *ctx)
 }
 
 
-void save_volume_to_ply(context *ctx, char *filename, float* tsdf, float* weight, uint8_t* rgb)
+void save_volume_to_ply(context *ctx, char *filename, float* tsdf, uint8_t* rgb)
 {
     int dim_x = ctx->resolution[0];
     int dim_y = ctx->resolution[1];
@@ -52,7 +52,7 @@ void save_volume_to_ply(context *ctx, char *filename, float* tsdf, float* weight
     // count total num of points in point cloud
     int num_pts = 0;
     for(int i = 0; i < voxel_num; i++) {
-        if(std::abs(tsdf[i]) < ctx->tsdf_threshold && weight[i] > ctx->weight_threshhold) {
+        if(std::abs(tsdf[i]) < ctx->tsdf_threshold) {
             num_pts++;
         }
     }
@@ -73,7 +73,7 @@ void save_volume_to_ply(context *ctx, char *filename, float* tsdf, float* weight
     fprintf(fp, "end_header\n");
 
     for(int i = 0; i < voxel_num; i++) {
-        if(std::abs(tsdf[i]) < ctx->tsdf_threshold && weight[i] > ctx->weight_threshhold) {
+        if(std::abs(tsdf[i]) < ctx->tsdf_threshold) {
             int z = floor(i / (dim_x * dim_y));
             int y = floor((i - (z * dim_x * dim_y)) / dim_x);
             int x = i - (z * dim_x * dim_y) - y * dim_x;
