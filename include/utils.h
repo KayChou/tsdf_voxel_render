@@ -19,7 +19,7 @@ typedef struct context
 {
     int width;
     int height;
-    KRT krt[camera_num];
+    KRT krt[CAM_NUM];
     float min_depth, max_depth;
 
     int resolution[3];

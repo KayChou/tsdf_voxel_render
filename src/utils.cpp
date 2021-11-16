@@ -9,7 +9,7 @@ void load_camera_params(context *ctx)
     int camID;
     fscanf(file, "%f %f\n", &ctx->min_depth, &ctx->max_depth);
 
-    for (int cam_idx = 0; cam_idx < camera_num; cam_idx++)
+    for (int cam_idx = 0; cam_idx < CAM_NUM; cam_idx++)
     {
         fscanf(file, "%s %d\n", temps, &camID);
         fscanf(file, "%s %d %d\n", temps, &ctx->width, &ctx->height);

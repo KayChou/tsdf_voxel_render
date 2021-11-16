@@ -30,9 +30,9 @@ context* init_context()
     cudaMalloc((void**)&ctx->weight_voxel, voxel_num * sizeof(float));
     cudaMalloc((void**)&ctx->color_voxel, voxel_num * sizeof(uint8_t) * 3);
 
-    cudaMalloc((void**)&ctx->in_buf_depth, WIDTH * HEIGHT * sizeof(uint8_t));
-    cudaMalloc((void**)&ctx->in_buf_color, WIDTH * HEIGHT * sizeof(uint8_t) * 3);
-    cudaMalloc((void**)&ctx->depth, WIDTH * HEIGHT * sizeof(float));
+    cudaMalloc((void**)&ctx->in_buf_depth, CAM_NUM * WIDTH * HEIGHT * sizeof(uint8_t));
+    cudaMalloc((void**)&ctx->in_buf_color, CAM_NUM * WIDTH * HEIGHT * sizeof(uint8_t) * 3);
+    cudaMalloc((void**)&ctx->depth, CAM_NUM * WIDTH * HEIGHT * sizeof(float));
     cudaMalloc((void**)&ctx->pcd, 3 * WIDTH * HEIGHT * sizeof(float));
 
     cudaMemset(ctx->tsdf_voxel, 1, voxel_num * sizeof(float));
@@ -77,16 +77,8 @@ void dequantization(context* ctx, uint8_t *input_depth, float *output_depth)
 }
 
 
-__global__ void integrate_kernel(context* ctx, int cam_idx)
+__global__ void integrate_kernel(context* ctx)
 {
-    float fx = ctx->krt[cam_idx].fx;
-    float fy = ctx->krt[cam_idx].fy;
-    float cx = ctx->krt[cam_idx].cx;
-    float cy = ctx->krt[cam_idx].cy;
-
-    float* R = ctx->krt[cam_idx].R;
-    float* T = ctx->krt[cam_idx].T;
-
     int z_voxel = blockIdx.x;
     int y_voxel = threadIdx.x;
 
@@ -99,63 +91,74 @@ __global__ void integrate_kernel(context* ctx, int cam_idx)
     float old_r, old_g, old_b;
     float new_r, new_g, new_b; 
 
+    // each cuda thread handles one volume line(x axis)
     for(int x_voxel = 0; x_voxel < ctx->resolution[2]; x_voxel++) {
-        // convert voxel index to world points position
-        world_x = world_x0 + x_voxel * ctx->voxel_size;
-        world_y = world_y0 + y_voxel * ctx->voxel_size;
-        world_z = world_z0 + z_voxel * ctx->voxel_size;
+        // for each voxel, loop for all views
+        for(int cam_idx = 0; cam_idx < CAM_NUM; cam_idx++) {
+            float fx = ctx->krt[cam_idx].fx;
+            float fy = ctx->krt[cam_idx].fy;
+            float cx = ctx->krt[cam_idx].cx;
+            float cy = ctx->krt[cam_idx].cy;
 
-        // convert point from world to camera coordinate
-        world_x -= T[0];
-        world_y -= T[1];
-        world_z -= T[2];
-        camera_x = R[0] * world_x + R[1] * world_y + R[2] * world_z;
-        camera_y = R[3] * world_x + R[4] * world_y + R[5] * world_z;
-        camera_z = R[6] * world_x + R[7] * world_y + R[8] * world_z;
+            float* R = ctx->krt[cam_idx].R;
+            float* T = ctx->krt[cam_idx].T;
+        
+            // convert voxel index to world points position
+            world_x = world_x0 + x_voxel * ctx->voxel_size;
+            world_y = world_y0 + y_voxel * ctx->voxel_size;
+            world_z = world_z0 + z_voxel * ctx->voxel_size;
 
-        if(camera_z <= 0) {
-            continue;
+            // convert point from world to camera coordinate
+            world_x -= T[0];
+            world_y -= T[1];
+            world_z -= T[2];
+            camera_x = R[0] * world_x + R[1] * world_y + R[2] * world_z;
+            camera_y = R[3] * world_x + R[4] * world_y + R[5] * world_z;
+            camera_z = R[6] * world_x + R[7] * world_y + R[8] * world_z;
+
+            if(camera_z <= 0) {
+                continue;
+            }
+
+            // convert point from camera to pixel coorinate
+            pix_x = roundf(fx * camera_x / camera_z + cx);
+            pix_y = roundf(fy * camera_y / camera_z + cy);
+            int pix_idx = pix_y * WIDTH + pix_x;
+
+            if(pix_x < 0 || pix_x >= WIDTH || pix_y < 0 || pix_y >= HEIGHT) {
+                continue;
+            }
+
+            float depth_value = ctx->depth[WIDTH * HEIGHT + pix_idx];
+            new_r = ctx->in_buf_color[WIDTH * HEIGHT * 3 + 3 * pix_idx + 0];
+            new_g = ctx->in_buf_color[WIDTH * HEIGHT * 3 + 3 * pix_idx + 1];
+            new_b = ctx->in_buf_color[WIDTH * HEIGHT * 3 + 3 * pix_idx + 2];
+            if(depth_value == 0 || new_r == 0 || new_g == 0 || new_b == 0) {
+                continue;
+            }
+
+            float diff = depth_value - camera_z;
+            if (diff <= -ctx->trunc_margin) {
+                continue;
+            }
+
+            int voxel_idx = z_voxel * dim_y * dim_x + y_voxel * dim_x + x_voxel;
+            float dist = fmin(1.0f, diff / ctx->trunc_margin);
+
+            // update TSDF and weight
+            float weight = ctx->weight_voxel[voxel_idx];
+            ctx->tsdf_voxel[voxel_idx] = (ctx->tsdf_voxel[voxel_idx] * weight + dist) / (weight + 1.0f);
+            ctx->weight_voxel[voxel_idx] += 1.0f;
+
+            // update color
+            old_r = ctx->color_voxel[3 * voxel_idx + 0];
+            old_g = ctx->color_voxel[3 * voxel_idx + 1];
+            old_b = ctx->color_voxel[3 * voxel_idx + 2];
+
+            ctx->color_voxel[3 * voxel_idx + 0] = (uint8_t)fminf((float)(old_r * weight + new_r * 1.0f) / (weight + 1.0f), 255);
+            ctx->color_voxel[3 * voxel_idx + 1] = (uint8_t)fminf((float)(old_g * weight + new_g * 1.0f) / (weight + 1.0f), 255);
+            ctx->color_voxel[3 * voxel_idx + 2] = (uint8_t)fminf((float)(old_b * weight + new_b * 1.0f) / (weight + 1.0f), 255);
         }
-
-        // convert point from camera to pixel coorinate
-        pix_x = roundf(fx * camera_x / camera_z + cx);
-        pix_y = roundf(fy * camera_y / camera_z + cy);
-        int pix_idx = pix_y * WIDTH + pix_x;
-
-        if(pix_x < 0 || pix_x >= WIDTH || pix_y < 0 || pix_y >= HEIGHT) {
-            continue;
-        }
-
-        float depth_value = ctx->depth[pix_idx];
-        new_r = ctx->in_buf_color[3 * pix_idx + 0];
-        new_g = ctx->in_buf_color[3 * pix_idx + 1];
-        new_b = ctx->in_buf_color[3 * pix_idx + 2];
-        if(depth_value == 0 || new_r == 0 || new_g == 0 || new_b == 0) {
-            continue;
-        }
-
-        float diff = depth_value - camera_z;
-        if (diff <= -ctx->trunc_margin) {
-            continue;
-        }
-
-        int voxel_idx = z_voxel * dim_y * dim_x + y_voxel * dim_x + x_voxel;
-        float dist = fmin(1.0f, diff / ctx->trunc_margin);
-
-        // update TSDF and weight
-        float weight = ctx->weight_voxel[voxel_idx];
-        ctx->tsdf_voxel[voxel_idx] = (ctx->tsdf_voxel[voxel_idx] * weight + dist) / (weight + 1.0f);
-        ctx->weight_voxel[voxel_idx] += 1.0f;
-
-
-        // update color
-        old_r = ctx->color_voxel[3 * voxel_idx + 0];
-        old_g = ctx->color_voxel[3 * voxel_idx + 1];
-        old_b = ctx->color_voxel[3 * voxel_idx + 2];
-
-        ctx->color_voxel[3 * voxel_idx + 0] = (uint8_t)fminf((float)(old_r * weight + new_r * 1.0f) / (weight + 1.0f), 255);
-        ctx->color_voxel[3 * voxel_idx + 1] = (uint8_t)fminf((float)(old_g * weight + new_g * 1.0f) / (weight + 1.0f), 255);
-        ctx->color_voxel[3 * voxel_idx + 2] = (uint8_t)fminf((float)(old_b * weight + new_b * 1.0f) / (weight + 1.0f), 255);
     }
 }
 
@@ -173,11 +176,14 @@ void Integrate(context* ctx, int cam_idx, uint8_t *in_buf_depth, uint8_t* in_buf
     cudaEventRecord(start);
 #endif
 
-    cudaMemcpy(ctx->in_buf_depth, in_buf_depth, WIDTH * HEIGHT * sizeof(uint8_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(ctx->in_buf_color, in_buf_color, 3 * WIDTH * HEIGHT * sizeof(uint8_t), cudaMemcpyHostToDevice);
-    dequantization(ctx, ctx->in_buf_depth, ctx->depth);
+    cudaMemcpy(ctx->in_buf_depth, in_buf_depth, CAM_NUM * WIDTH * HEIGHT * sizeof(uint8_t), cudaMemcpyHostToDevice);
+    cudaMemcpy(ctx->in_buf_color, in_buf_color, CAM_NUM * 3 * WIDTH * HEIGHT * sizeof(uint8_t), cudaMemcpyHostToDevice);
 
-    integrate_kernel<<<ctx->resolution[2], ctx->resolution[1]>>>(ctx, cam_idx);
+    for(int i = 0; i < CAM_NUM; i++) {
+        dequantization(ctx, ctx->in_buf_depth + WIDTH * HEIGHT, ctx->depth + WIDTH * HEIGHT);
+    }
+
+    integrate_kernel<<<ctx->resolution[2], ctx->resolution[1]>>>(ctx);
 
 #ifdef TimeEventRecord
     cudaEventRecord(end);
