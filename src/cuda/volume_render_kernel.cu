@@ -30,17 +30,11 @@ __global__ void integrate_kernel(context* ctx)
     float new_r, new_g, new_b;
     float weight;
 
-    __shared__ float tsdf[32][32];
-    __shared__ uint8_t color[32][32][3];
+    __shared__ baseVoxel L0_voxel[32][32];
 
     // each cuda thread handles one volume line(x axis)
     for(int x_voxel = 0; x_voxel < ctx->resolution[2]; x_voxel++) {
         weight = 0;
-        tsdf[threadIdx.x][threadIdx.y] = 1;
-        color[threadIdx.x][threadIdx.y][0] = 0;
-        color[threadIdx.x][threadIdx.y][1] = 0;
-        color[threadIdx.x][threadIdx.y][2] = 0;
-
         int voxel_idx = z_voxel * DIM_Y * DIM_X + y_voxel * DIM_X + x_voxel;
         // for each voxel, loop for all views
         for(int cam_idx = 0; cam_idx < CAM_NUM; cam_idx++) {
@@ -94,18 +88,18 @@ __global__ void integrate_kernel(context* ctx)
             float dist = fmin(1.0f, diff / ctx->trunc_margin);
 
             // update TSDF and weight
-            tsdf[threadIdx.x][threadIdx.y] = (tsdf[threadIdx.x][threadIdx.y] * weight + dist) / (weight + 1.0f);
+            L0_voxel[threadIdx.x][threadIdx.y].tsdf = (L0_voxel[threadIdx.x][threadIdx.y].tsdf * weight + dist) / (weight + 1.0f);
             // ctx->tsdf_voxel[voxel_idx] = (ctx->tsdf_voxel[voxel_idx] * weight + dist) / (weight + 1.0f);
             weight += 1.0f;
 
             // update color
-            old_r = color[threadIdx.x][threadIdx.y][0];
-            old_g = color[threadIdx.x][threadIdx.y][1];
-            old_b = color[threadIdx.x][threadIdx.y][2];
+            old_r = L0_voxel[threadIdx.x][threadIdx.y].rgb[0];
+            old_g = L0_voxel[threadIdx.x][threadIdx.y].rgb[1];
+            old_b = L0_voxel[threadIdx.x][threadIdx.y].rgb[2];
 
-            color[threadIdx.x][threadIdx.y][0] = (uint8_t)fminf((float)(old_r * weight + new_r * 1.0f) / (weight + 1.0f), 255);
-            color[threadIdx.x][threadIdx.y][1] = (uint8_t)fminf((float)(old_g * weight + new_g * 1.0f) / (weight + 1.0f), 255);
-            color[threadIdx.x][threadIdx.y][2] = (uint8_t)fminf((float)(old_b * weight + new_b * 1.0f) / (weight + 1.0f), 255);
+            L0_voxel[threadIdx.x][threadIdx.y].rgb[0] = (uint8_t)fminf((float)(old_r * weight + new_r * 1.0f) / (weight + 1.0f), 255);
+            L0_voxel[threadIdx.x][threadIdx.y].rgb[1] = (uint8_t)fminf((float)(old_g * weight + new_g * 1.0f) / (weight + 1.0f), 255);
+            L0_voxel[threadIdx.x][threadIdx.y].rgb[2] = (uint8_t)fminf((float)(old_b * weight + new_b * 1.0f) / (weight + 1.0f), 255);
         }
 
         // copy tsdf and color from shared memory to global memory
@@ -113,11 +107,11 @@ __global__ void integrate_kernel(context* ctx)
             ctx->tsdf_voxel[voxel_idx] = 2 * TSDF_THRESHOLD;
         }
         else {
-            ctx->tsdf_voxel[voxel_idx] = tsdf[threadIdx.x][threadIdx.y];
+            ctx->tsdf_voxel[voxel_idx] = L0_voxel[threadIdx.x][threadIdx.y].tsdf;
         }
-        ctx->color_voxel[3 * voxel_idx + 0] = color[threadIdx.x][threadIdx.y][0];
-        ctx->color_voxel[3 * voxel_idx + 1] = color[threadIdx.x][threadIdx.y][1];
-        ctx->color_voxel[3 * voxel_idx + 2] = color[threadIdx.x][threadIdx.y][2];
+        ctx->color_voxel[3 * voxel_idx + 0] = L0_voxel[threadIdx.x][threadIdx.y].rgb[0];
+        ctx->color_voxel[3 * voxel_idx + 1] = L0_voxel[threadIdx.x][threadIdx.y].rgb[1];
+        ctx->color_voxel[3 * voxel_idx + 2] = L0_voxel[threadIdx.x][threadIdx.y].rgb[2];
     }
 }
 

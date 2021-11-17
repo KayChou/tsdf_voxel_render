@@ -10,7 +10,6 @@
 typedef struct baseVoxel
 {
     float tsdf;
-    float weight;
     uint8_t rgb[3];
 } baseVoxel;
 
