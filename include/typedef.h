@@ -48,7 +48,6 @@ typedef struct context
     float voxel_size;
     float trunc_margin;
 
-    float tsdf_threshold = 0.2f;
     float weight_threshhold = 0.0f;
 
     uint8_t* in_buf_depth; // input depth image

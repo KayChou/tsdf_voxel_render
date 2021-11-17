@@ -17,7 +17,6 @@ context* init_context()
     ctx->voxel_size = VOXEL_SIZE;
     ctx->trunc_margin = 5 * ctx->voxel_size;
 
-    ctx->tsdf_threshold = TSDF_THRESHOLD;
     ctx->weight_threshhold = WEIGHT_THRESHOLD;
 
     int voxel_num = ctx->resolution[0] * ctx->resolution[1] * ctx->resolution[2];

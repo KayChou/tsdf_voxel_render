@@ -103,6 +103,9 @@ __global__ void integrate_kernel(context* ctx)
     float world_x, world_y, world_z;
     float weight;
 
+    __shared__ int L1_cnt[32][32]; // if 1: need to be spilt to L1 voxel
+    L1_cnt[threadIdx.x][threadIdx.y] = 0;
+
     __shared__ baseVoxel L0_voxel[32][32];
     __shared__ KRT cam_pose[CAM_NUM];
     if(threadIdx.x == 0 && threadIdx.y == 0) {
@@ -130,7 +133,7 @@ __global__ void integrate_kernel(context* ctx)
                             L0_voxel[threadIdx.x][threadIdx.y].rgb[2]);
 
         // copy tsdf and color from shared memory to global memory
-        ctx->tsdf_voxel[voxel_idx] = (weight < WEIGHT_THRESHOLD) ? 2 * TSDF_THRESHOLD : L0_voxel[threadIdx.x][threadIdx.y].tsdf;
+        ctx->tsdf_voxel[voxel_idx] = (weight < WEIGHT_THRESHOLD) ? 2 * TSDF_THRESHOLD_L0 : L0_voxel[threadIdx.x][threadIdx.y].tsdf;
         ctx->color_voxel[3 * voxel_idx + 0] = L0_voxel[threadIdx.x][threadIdx.y].rgb[0];
         ctx->color_voxel[3 * voxel_idx + 1] = L0_voxel[threadIdx.x][threadIdx.y].rgb[1];
         ctx->color_voxel[3 * voxel_idx + 2] = L0_voxel[threadIdx.x][threadIdx.y].rgb[2];

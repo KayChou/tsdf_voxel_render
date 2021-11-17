@@ -47,12 +47,12 @@ void save_volume_to_ply(context *ctx, char *filename, float* tsdf, uint8_t* rgb)
     int dim_z = ctx->resolution[2];
     int voxel_num = ctx->resolution[0] * ctx->resolution[1] * ctx->resolution[2];
 
-    printf("threshold: %f %f\n", ctx->tsdf_threshold, ctx->weight_threshhold);
+    printf("threshold: %f %f\n", TSDF_THRESHOLD_L0, ctx->weight_threshhold);
 
     // count total num of points in point cloud
     int num_pts = 0;
     for(int i = 0; i < voxel_num; i++) {
-        if(std::abs(tsdf[i]) < ctx->tsdf_threshold) {
+        if(std::abs(tsdf[i]) < TSDF_THRESHOLD_L0) {
             num_pts++;
         }
     }
@@ -73,7 +73,7 @@ void save_volume_to_ply(context *ctx, char *filename, float* tsdf, uint8_t* rgb)
     fprintf(fp, "end_header\n");
 
     for(int i = 0; i < voxel_num; i++) {
-        if(std::abs(tsdf[i]) < ctx->tsdf_threshold) {
+        if(std::abs(tsdf[i]) < TSDF_THRESHOLD_L0) {
             int z = floor(i / (dim_x * dim_y));
             int y = floor((i - (z * dim_x * dim_y)) / dim_x);
             int x = i - (z * dim_x * dim_y) - y * dim_x;
