@@ -1,5 +1,82 @@
 #include "cuda_kernel.cuh"
 
+// input xyz in world, output tsdf and color
+__device__ void integrate_one_voxel(const float x, 
+                                    const float y, 
+                                    const float z,
+                                    context* ctx,
+                                    KRT* Krt,
+                                    float &weight,
+                                    float &tsdf,
+                                    uint8_t &r,
+                                    uint8_t &g, 
+                                    uint8_t &b) {
+    uint8_t new_r, new_g, new_b;
+    float camera_x, camera_y, camera_z;
+    int pix_x, pix_y;
+
+    tsdf = 0;
+    weight = 0;
+    r = 0;
+    g = 0;
+    b = 0;
+
+    for(int cam_idx = 0; cam_idx < CAM_NUM; cam_idx++) {
+        float fx = Krt[cam_idx].fx;
+        float fy = Krt[cam_idx].fy;
+        float cx = Krt[cam_idx].cx;
+        float cy = Krt[cam_idx].cy;
+        float* R = Krt[cam_idx].R;
+        float* T = Krt[cam_idx].T;
+
+        // convert point from world to camera coordinate
+        camera_x = R[0] * (x - T[0]) + R[1] * (y - T[1]) + R[2] * (z - T[2]);
+        camera_y = R[3] * (x - T[0]) + R[4] * (y - T[1]) + R[5] * (z - T[2]);
+        camera_z = R[6] * (x - T[0]) + R[7] * (y - T[1]) + R[8] * (z - T[2]);
+
+        if(camera_z <= 0) {
+            continue;
+        }
+
+        // convert point from camera to pixel coorinate
+        pix_x = roundf(fx * camera_x / camera_z + cx);
+        pix_y = roundf(fy * camera_y / camera_z + cy);
+        int pix_idx = pix_y * WIDTH + pix_x;
+
+        if(pix_x < 0 || pix_x >= WIDTH || pix_y < 0 || pix_y >= HEIGHT) {
+            continue;
+        }
+
+        float depth_value = ctx->depth[WIDTH * HEIGHT * cam_idx + pix_idx];
+        if(depth_value == 0) {
+            continue;
+        }
+
+        float diff = depth_value - camera_z;
+        if (diff <= -ctx->trunc_margin) {
+            continue;
+        }
+        float dist = fmin(1.0f, diff / ctx->trunc_margin);
+
+        // update TSDF
+        tsdf = (tsdf * weight + dist) / (weight + 1.0f);
+
+        // update color
+        new_r = ctx->in_buf_color[WIDTH * HEIGHT * 3 * cam_idx + 3 * pix_idx + 0];
+        new_g = ctx->in_buf_color[WIDTH * HEIGHT * 3 * cam_idx + 3 * pix_idx + 1];
+        new_b = ctx->in_buf_color[WIDTH * HEIGHT * 3 * cam_idx + 3 * pix_idx + 2];
+
+        r = (uint8_t)fminf((float)(r * weight + new_r * 1.0f) / (weight + 1.0f), 255);
+        g = (uint8_t)fminf((float)(g * weight + new_g * 1.0f) / (weight + 1.0f), 255);
+        b = (uint8_t)fminf((float)(b * weight + new_b * 1.0f) / (weight + 1.0f), 255);
+
+        // update weight
+        weight += 1.0f;
+    }
+    return;
+}
+
+
 __global__ void dequantization_kernel(context* ctx, uint8_t *input_depth, float *output_depth)
 {
     int x = threadIdx.x + blockIdx.x * blockDim.x;
@@ -24,91 +101,36 @@ __global__ void integrate_kernel(context* ctx)
     int y_voxel = threadIdx.y + blockIdx.y * blockDim.y;
 
     float world_x, world_y, world_z;
-    float camera_x, camera_y, camera_z;
-    int pix_x, pix_y;
-    float old_r, old_g, old_b;
-    float new_r, new_g, new_b;
     float weight;
 
     __shared__ baseVoxel L0_voxel[32][32];
+    __shared__ KRT cam_pose[CAM_NUM];
+    if(threadIdx.x == 0 && threadIdx.y == 0) {
+        memcpy(cam_pose, ctx->krt, CAM_NUM * sizeof(KRT));
+    }
+    __syncthreads();
 
     // each cuda thread handles one volume line(x axis)
-    for(int x_voxel = 0; x_voxel < ctx->resolution[2]; x_voxel++) {
+    for(int x_voxel = 0; x_voxel < DIM_X; x_voxel++) {
         weight = 0;
         int voxel_idx = z_voxel * DIM_Y * DIM_X + y_voxel * DIM_X + x_voxel;
-        // for each voxel, loop for all views
-        for(int cam_idx = 0; cam_idx < CAM_NUM; cam_idx++) {
-            float fx = ctx->krt[cam_idx].fx;
-            float fy = ctx->krt[cam_idx].fy;
-            float cx = ctx->krt[cam_idx].cx;
-            float cy = ctx->krt[cam_idx].cy;
-
-            float* R = ctx->krt[cam_idx].R;
-            float* T = ctx->krt[cam_idx].T;
         
-            // convert voxel index to world points position
-            world_x = world_x0 + x_voxel * ctx->voxel_size;
-            world_y = world_y0 + y_voxel * ctx->voxel_size;
-            world_z = world_z0 + z_voxel * ctx->voxel_size;
+        // convert voxel index to world points position
+        world_x = world_x0 + x_voxel * ctx->voxel_size;
+        world_y = world_y0 + y_voxel * ctx->voxel_size;
+        world_z = world_z0 + z_voxel * ctx->voxel_size;
 
-            // convert point from world to camera coordinate
-            world_x -= T[0];
-            world_y -= T[1];
-            world_z -= T[2];
-            camera_x = R[0] * world_x + R[1] * world_y + R[2] * world_z;
-            camera_y = R[3] * world_x + R[4] * world_y + R[5] * world_z;
-            camera_z = R[6] * world_x + R[7] * world_y + R[8] * world_z;
-
-            if(camera_z <= 0) {
-                continue;
-            }
-
-            // convert point from camera to pixel coorinate
-            pix_x = roundf(fx * camera_x / camera_z + cx);
-            pix_y = roundf(fy * camera_y / camera_z + cy);
-            int pix_idx = pix_y * WIDTH + pix_x;
-
-            if(pix_x < 0 || pix_x >= WIDTH || pix_y < 0 || pix_y >= HEIGHT) {
-                continue;
-            }
-
-            float depth_value = ctx->depth[WIDTH * HEIGHT * cam_idx + pix_idx];
-            new_r = ctx->in_buf_color[WIDTH * HEIGHT * 3 * cam_idx + 3 * pix_idx + 0];
-            new_g = ctx->in_buf_color[WIDTH * HEIGHT * 3 * cam_idx + 3 * pix_idx + 1];
-            new_b = ctx->in_buf_color[WIDTH * HEIGHT * 3 * cam_idx + 3 * pix_idx + 2];
-            if(depth_value == 0 || new_r == 0 || new_g == 0 || new_b == 0) {
-                continue;
-            }
-
-            float diff = depth_value - camera_z;
-            if (diff <= -ctx->trunc_margin) {
-                continue;
-            }
-
-            float dist = fmin(1.0f, diff / ctx->trunc_margin);
-
-            // update TSDF and weight
-            L0_voxel[threadIdx.x][threadIdx.y].tsdf = (L0_voxel[threadIdx.x][threadIdx.y].tsdf * weight + dist) / (weight + 1.0f);
-            // ctx->tsdf_voxel[voxel_idx] = (ctx->tsdf_voxel[voxel_idx] * weight + dist) / (weight + 1.0f);
-            weight += 1.0f;
-
-            // update color
-            old_r = L0_voxel[threadIdx.x][threadIdx.y].rgb[0];
-            old_g = L0_voxel[threadIdx.x][threadIdx.y].rgb[1];
-            old_b = L0_voxel[threadIdx.x][threadIdx.y].rgb[2];
-
-            L0_voxel[threadIdx.x][threadIdx.y].rgb[0] = (uint8_t)fminf((float)(old_r * weight + new_r * 1.0f) / (weight + 1.0f), 255);
-            L0_voxel[threadIdx.x][threadIdx.y].rgb[1] = (uint8_t)fminf((float)(old_g * weight + new_g * 1.0f) / (weight + 1.0f), 255);
-            L0_voxel[threadIdx.x][threadIdx.y].rgb[2] = (uint8_t)fminf((float)(old_b * weight + new_b * 1.0f) / (weight + 1.0f), 255);
-        }
+        integrate_one_voxel(world_x, world_y, world_z, 
+                            ctx,
+                            cam_pose,
+                            weight,
+                            L0_voxel[threadIdx.x][threadIdx.y].tsdf,
+                            L0_voxel[threadIdx.x][threadIdx.y].rgb[0],
+                            L0_voxel[threadIdx.x][threadIdx.y].rgb[1],
+                            L0_voxel[threadIdx.x][threadIdx.y].rgb[2]);
 
         // copy tsdf and color from shared memory to global memory
-        if(weight < WEIGHT_THRESHOLD) {
-            ctx->tsdf_voxel[voxel_idx] = 2 * TSDF_THRESHOLD;
-        }
-        else {
-            ctx->tsdf_voxel[voxel_idx] = L0_voxel[threadIdx.x][threadIdx.y].tsdf;
-        }
+        ctx->tsdf_voxel[voxel_idx] = (weight < WEIGHT_THRESHOLD) ? 2 * TSDF_THRESHOLD : L0_voxel[threadIdx.x][threadIdx.y].tsdf;
         ctx->color_voxel[3 * voxel_idx + 0] = L0_voxel[threadIdx.x][threadIdx.y].rgb[0];
         ctx->color_voxel[3 * voxel_idx + 1] = L0_voxel[threadIdx.x][threadIdx.y].rgb[1];
         ctx->color_voxel[3 * voxel_idx + 2] = L0_voxel[threadIdx.x][threadIdx.y].rgb[2];

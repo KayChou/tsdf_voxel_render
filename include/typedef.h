@@ -14,6 +14,15 @@ typedef struct baseVoxel
 } baseVoxel;
 
 
+// one baseVoxel contains 3x3x3 L1Voxels
+typedef struct L1Voxel
+{
+    int baseIdx; // indicate which baseVoxel belongs to
+    float tsdf;
+    uint8_t rgb[3];
+} L1Voxel;
+
+
 typedef struct KRT
 {
     float fx, fy, cx, cy;
