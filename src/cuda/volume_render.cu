@@ -18,6 +18,7 @@ context* init_context()
     ctx->trunc_margin = 5 * ctx->voxel_size;
 
     ctx->weight_threshhold = WEIGHT_THRESHOLD;
+    ctx->L1_voxel_num = 0;
 
     int voxel_num = ctx->resolution[0] * ctx->resolution[1] * ctx->resolution[2];
 
@@ -27,6 +28,8 @@ context* init_context()
     cudaMalloc((void**)&ctx->in_buf_color, CAM_NUM * WIDTH * HEIGHT * sizeof(uint8_t) * 3);
     cudaMalloc((void**)&ctx->depth, CAM_NUM * WIDTH * HEIGHT * sizeof(float));
     cudaMalloc((void**)&ctx->pcd, 3 * WIDTH * HEIGHT * sizeof(float));
+    cudaMalloc((void**)&ctx->L1_voxel_idx, voxel_num * sizeof(int));
+
     cudaMemset(ctx->tsdf_voxel, 1, voxel_num * sizeof(float));
     cudaMemset(ctx->color_voxel, 0, voxel_num * sizeof(uint8_t) * 3);
     HANDLE_ERROR();
@@ -63,6 +66,7 @@ void Integrate(context* ctx, uint8_t *in_buf_depth, uint8_t* in_buf_color)
 
     cudaEventRecord(start);
 #endif
+    reset_context(ctx);
     cudaMemcpy(ctx->in_buf_depth, in_buf_depth, CAM_NUM * WIDTH * HEIGHT * sizeof(uint8_t), cudaMemcpyHostToDevice);
     cudaMemcpy(ctx->in_buf_color, in_buf_color, CAM_NUM * 3 * WIDTH * HEIGHT * sizeof(uint8_t), cudaMemcpyHostToDevice);
 
@@ -71,9 +75,11 @@ void Integrate(context* ctx, uint8_t *in_buf_depth, uint8_t* in_buf_color)
         HANDLE_ERROR();
     }
 
-    dim3 blocks(DIM_Z / 32, DIM_Y / 32);
-    dim3 threads(32, 32);
-    integrate_kernel<<<blocks, threads>>>(ctx);
+    Lock *lock;
+    cudaMallocManaged((void**)&lock, sizeof(Lock));
+
+    integrate_L0_kernel<<<dim3(DIM_Z / 32, DIM_Y / 32),dim3(32, 32)>>>(ctx, lock);
+    
     HANDLE_ERROR();
 
 #ifdef TimeEventRecord
@@ -106,6 +112,12 @@ void memcpy_volume_to_cpu(context* ctx, float* tsdf_out, uint8_t* rgb_out)
 
     cudaMemcpy(tsdf_out, ctx->tsdf_voxel, voxel_num * sizeof(float), cudaMemcpyDeviceToHost);
     cudaMemcpy(rgb_out, ctx->color_voxel, voxel_num * sizeof(uint8_t) * 3, cudaMemcpyDeviceToHost);
+}
+
+
+void reset_context(context* ctx)
+{
+    ctx->L1_voxel_num = 0;
 }
 
 

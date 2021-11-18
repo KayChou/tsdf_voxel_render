@@ -54,6 +54,8 @@ int main(int argc, char** argv)
     memcpy_volume_to_cpu(ctx, tsdf_cpu, color_cpu);
     save_volume_to_ply(ctx, "../results/fusion.ply", tsdf_cpu, color_cpu);
 
+    printf("L1 voxel num: %d\n", ctx->L1_voxel_num);
+
     release_context(ctx);
     delete [] in_buf_depth;
     delete [] in_buf_color;

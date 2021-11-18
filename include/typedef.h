@@ -47,10 +47,12 @@ typedef struct context
 
     float voxel_size;
     float trunc_margin;
-
     float weight_threshhold = 0.0f;
 
     uint8_t* in_buf_depth; // input depth image
     uint8_t* in_buf_color;
     float* depth; // depth after dequantization
+
+    int L1_voxel_num;
+    int *L1_voxel_idx;
 } context;
