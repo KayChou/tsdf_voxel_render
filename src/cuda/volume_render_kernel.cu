@@ -102,10 +102,10 @@ __global__ void integrate_L0_kernel(context* ctx, Lock *lock)
 
     float world_x, world_y, world_z;
     float weight;
+    baseVoxel L0_voxel;
+
     __shared__ int L1_cnt[32][32]; // cnt L1 voxels' num in one block(32 * 32 threads)
     __shared__ int L1_idx[32][32][8]; // 32 * 32 * DIM_X voxel has 32 * DIM_X * surfaces at max
-
-    __shared__ baseVoxel L0_voxel[32][32];
     __shared__ KRT cam_pose[CAM_NUM];
 
     if(threadIdx.x == 0 && threadIdx.y == 0) {
@@ -132,17 +132,17 @@ __global__ void integrate_L0_kernel(context* ctx, Lock *lock)
                                 ctx,
                                 cam_pose,
                                 weight,
-                                L0_voxel[threadIdx.x][threadIdx.y].tsdf,
-                                L0_voxel[threadIdx.x][threadIdx.y].rgb[0],
-                                L0_voxel[threadIdx.x][threadIdx.y].rgb[1],
-                                L0_voxel[threadIdx.x][threadIdx.y].rgb[2]);
+                                L0_voxel.tsdf,
+                                L0_voxel.rgb[0],
+                                L0_voxel.rgb[1],
+                                L0_voxel.rgb[2]);
 
             // copy tsdf and color from shared memory to global memory
-            float tsdf_tmp = (weight < WEIGHT_THRESHOLD) ? 2 * TSDF_THRESHOLD_L0 : L0_voxel[threadIdx.x][threadIdx.y].tsdf;
+            float tsdf_tmp = (weight < WEIGHT_THRESHOLD) ? 2 * TSDF_THRESHOLD_L0 : L0_voxel.tsdf;
             ctx->tsdf_voxel[voxel_idx] = tsdf_tmp;
-            ctx->color_voxel[3 * voxel_idx + 0] = L0_voxel[threadIdx.x][threadIdx.y].rgb[0];
-            ctx->color_voxel[3 * voxel_idx + 1] = L0_voxel[threadIdx.x][threadIdx.y].rgb[1];
-            ctx->color_voxel[3 * voxel_idx + 2] = L0_voxel[threadIdx.x][threadIdx.y].rgb[2];
+            ctx->color_voxel[3 * voxel_idx + 0] = L0_voxel.rgb[0];
+            ctx->color_voxel[3 * voxel_idx + 1] = L0_voxel.rgb[1];
+            ctx->color_voxel[3 * voxel_idx + 2] = L0_voxel.rgb[2];
 
             if(abs(tsdf_tmp) < TSDF_THRESHOLD_L0) {
                 L1_idx[threadIdx.x][threadIdx.y][L1_cnt[threadIdx.x][threadIdx.y]] = voxel_idx;
