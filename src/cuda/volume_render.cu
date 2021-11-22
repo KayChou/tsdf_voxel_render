@@ -28,7 +28,7 @@ context* init_context()
     cudaMalloc((void**)&ctx->in_buf_color, CAM_NUM * WIDTH * HEIGHT * sizeof(uint8_t) * 3);
     cudaMalloc((void**)&ctx->depth, CAM_NUM * WIDTH * HEIGHT * sizeof(float));
     cudaMalloc((void**)&ctx->pcd, 3 * WIDTH * HEIGHT * sizeof(float));
-    cudaMalloc((void**)&ctx->L1_voxel_idx, voxel_num * sizeof(int));
+    cudaMallocManaged((void**)&ctx->L1_voxel_idx, voxel_num * sizeof(int));
 
     cudaMemset(ctx->tsdf_voxel, 1, voxel_num * sizeof(float));
     cudaMemset(ctx->color_voxel, 0, voxel_num * sizeof(uint8_t) * 3);
@@ -78,7 +78,11 @@ void Integrate(context* ctx, uint8_t *in_buf_depth, uint8_t* in_buf_color)
     Lock *lock;
     cudaMallocManaged((void**)&lock, sizeof(Lock));
 
-    integrate_L0_kernel<<<dim3(DIM_Z / 32, DIM_Y / 32),dim3(32, 32)>>>(ctx, lock);
+    integrate_L0_kernel<<<dim3(DIM_Z / 32, DIM_Y / 32), dim3(32, 32)>>>(ctx, lock);
+    cudaDeviceSynchronize(); // force cpu to wait util kernel finish
+
+    int block_config = (ctx->L1_voxel_num + 32) / 32;
+    integrate_L1_kernel<<<block_config, 32>>>(ctx, lock);
     
     HANDLE_ERROR();
 

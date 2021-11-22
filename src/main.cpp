@@ -55,6 +55,7 @@ int main(int argc, char** argv)
     save_volume_to_ply(ctx, "../results/fusion.ply", tsdf_cpu, color_cpu);
 
     printf("L1 voxel num: %d\n", ctx->L1_voxel_num);
+    printf("L2 voxel num: %d\n", ctx->L2_voxel_num);
 
     release_context(ctx);
     delete [] in_buf_depth;
