@@ -79,11 +79,14 @@ void Integrate(context* ctx, uint8_t *in_buf_depth, uint8_t* in_buf_color)
     cudaMallocManaged((void**)&lock, sizeof(Lock));
 
     integrate_L0_kernel<<<dim3(DIM_Z / 32, DIM_Y / 32), dim3(32, 32)>>>(ctx, lock);
-    cudaDeviceSynchronize(); // force cpu to wait util kernel finish
 
-    int block_config = (ctx->L0_voxel_num + 255) / 256;
-    integrate_L1_kernel<<<block_config, 256>>>(ctx, lock);
+    cudaDeviceSynchronize(); // force cpu to wait util kernel finish
+    integrate_L1_kernel<<<(ctx->L0_voxel_num + 255) / 256, 256>>>(ctx, lock);
+
+    cudaDeviceSynchronize();
+    integrate_L2_kernel<<<(ctx->L1_voxel_num + 255) / 256, 256>>>(ctx, lock);
     
+    cudaDeviceSynchronize();
     HANDLE_ERROR();
 
 #ifdef TimeEventRecord
@@ -113,8 +116,7 @@ void get_pcd_in_world(context* ctx, uint8_t *in_buf_depth, float *pcd, int cam_i
 void memcpy_volume_to_cpu(context* ctx, baseVoxel* voxel_out, int &voxel_num)
 {
     voxel_num = ctx->L0_voxel_num + ctx->L1_voxel_num + ctx->L2_voxel_num;
-    voxel_num = ctx->L1_voxel_num;
-    cudaMemcpy(voxel_out, ctx->valid_voxel + ctx->L0_voxel_num, voxel_num * sizeof(baseVoxel), cudaMemcpyDeviceToHost);
+    cudaMemcpy(voxel_out, ctx->valid_voxel, voxel_num * sizeof(baseVoxel), cudaMemcpyDeviceToHost);
 }
 
 

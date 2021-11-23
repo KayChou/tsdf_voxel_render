@@ -71,9 +71,9 @@ void save_volume_to_ply(context *ctx, char *filename, baseVoxel* voxels, int num
             int y = floor((i - (z * dim_x * dim_y)) / dim_x);
             int x = i - (z * dim_x * dim_y) - y * dim_x;
             
-            float pt_x = (float)(voxels[i].x);
-            float pt_y = (float)(voxels[i].y);
-            float pt_z = (float)(voxels[i].z);
+            float pt_x = std::fmax(world_x0 - VOXEL_SIZE * DIM_X, std::fmin((float)(voxels[i].x), world_x0 + VOXEL_SIZE * DIM_X));
+            float pt_y = std::fmax(world_y0 - VOXEL_SIZE * DIM_Y, std::fmin((float)(voxels[i].y), world_y0 + VOXEL_SIZE * DIM_Y));
+            float pt_z = std::fmax(world_z0 - VOXEL_SIZE * DIM_Z, std::fmin((float)(voxels[i].z), world_z0 + VOXEL_SIZE * DIM_Z));
 
             uint8_t r = voxels[i].rgb[0];
             uint8_t g = voxels[i].rgb[1];

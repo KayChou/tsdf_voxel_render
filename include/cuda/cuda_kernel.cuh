@@ -6,6 +6,7 @@
 __global__ void dequantization_kernel(context* ctx, uint8_t *input_depth, float *output_depth);
 __global__ void integrate_L0_kernel(context* ctx, Lock *lock);
 __global__ void integrate_L1_kernel(context* ctx, Lock *lock);
+__global__ void integrate_L2_kernel(context* ctx, Lock *lock);
 __global__ void depth_to_world_pcd(context* ctx, int cam_idx);
 
 void reset_context(context* ctx);
