@@ -105,8 +105,8 @@ __global__ void integrate_L0_kernel(context* ctx, Lock *lock)
     float weight;
     baseVoxel L0_voxel;
 
-    __shared__ int L1_cnt[32][32]; // cnt L1 voxels' num in one block(32 * 32 threads)
-    __shared__ int L1_idx[32][32][8]; // 32 * 32 * DIM_X voxel has 32 * DIM_X * surfaces at max
+    __shared__ int L0_cnt[32][32]; // cnt L1 voxels' num in one block(32 * 32 threads)
+    __shared__ int L0_idx[32][32][8]; // 32 * 32 * DIM_X voxel has 32 * DIM_X * surfaces at max
     __shared__ KRT cam_pose[CAM_NUM];
 
     if(threadIdx.x == 0 && threadIdx.y == 0) {
@@ -117,16 +117,16 @@ __global__ void integrate_L0_kernel(context* ctx, Lock *lock)
     // (because shared memory is limited to 48KB)
     for(int batch = 0; batch < DIM_X / 8; batch++) {
         int startIdx = 8 * batch;
-        L1_cnt[threadIdx.x][threadIdx.y] = 0;
+        L0_cnt[threadIdx.x][threadIdx.y] = 0;
         __syncthreads();
         for(int x_voxel = startIdx; x_voxel < startIdx + 8; x_voxel++) {
             weight = 0;
             int voxel_idx = z_voxel * DIM_Y * DIM_X + y_voxel * DIM_X + x_voxel;
             
             // convert voxel index to world points position
-            world_x = world_x0 + x_voxel * ctx->voxel_size;
-            world_y = world_y0 + y_voxel * ctx->voxel_size;
-            world_z = world_z0 + z_voxel * ctx->voxel_size;
+            world_x = world_x0 + x_voxel * VOXEL_SIZE;
+            world_y = world_y0 + y_voxel * VOXEL_SIZE;
+            world_z = world_z0 + z_voxel * VOXEL_SIZE;
 
             // compute one voxel's tsdf, weight and color
             integrate_one_voxel(world_x, world_y, world_z, 
@@ -146,8 +146,8 @@ __global__ void integrate_L0_kernel(context* ctx, Lock *lock)
             ctx->color_voxel[3 * voxel_idx + 2] = L0_voxel.rgb[2];
 
             if(abs(tsdf_tmp) < TSDF_THRESHOLD_L0) {
-                L1_idx[threadIdx.x][threadIdx.y][L1_cnt[threadIdx.x][threadIdx.y]] = voxel_idx;
-                L1_cnt[threadIdx.x][threadIdx.y] += 1;
+                L0_idx[threadIdx.x][threadIdx.y][L0_cnt[threadIdx.x][threadIdx.y]] = voxel_idx;
+                L0_cnt[threadIdx.x][threadIdx.y] += 1;
             }
             __syncthreads();
         }
@@ -158,7 +158,7 @@ __global__ void integrate_L0_kernel(context* ctx, Lock *lock)
         cnt = 0;
         for(int i = 0; i < blockDim.x; i++) {
             for(int j = 0; j < blockDim.y; j++) {
-                cnt += L1_cnt[i][j];
+                cnt += L0_cnt[i][j];
             }
         }
         __syncthreads();
@@ -169,23 +169,22 @@ __global__ void integrate_L0_kernel(context* ctx, Lock *lock)
             
             for(int i = 0; i < blockDim.x; i++) {
                 for(int j = 0; j < blockDim.y; j++) {
-                    for(int k = 0; k < L1_cnt[i][j]; k++) {
-                        int voxel_idx = L1_idx[i][j][k];
-                        int ptr = ctx->L1_voxel_num;
+                    for(int k = 0; k < L0_cnt[i][j]; k++) {
+                        int voxel_idx = L0_idx[i][j][k];
+                        int ptr = ctx->L0_voxel_num;
                         
                         int x_idx = voxel_idx % DIM_X;
                         int y_idx = ((voxel_idx - x_idx) / DIM_X) % DIM_Y;
                         int z_idx = (voxel_idx - x_idx - y_idx * DIM_X) / (DIM_Y * DIM_X);
 
-                        ctx->L1_voxel_idx[ptr] = voxel_idx;
                         ctx->valid_voxel[ptr].tsdf = ctx->tsdf_voxel[voxel_idx];
-                        ctx->valid_voxel[ptr].x = world_x0 + x_idx * ctx->voxel_size;
-                        ctx->valid_voxel[ptr].y = world_y0 + y_idx * ctx->voxel_size;
-                        ctx->valid_voxel[ptr].z = world_z0 + z_idx * ctx->voxel_size;
+                        ctx->valid_voxel[ptr].x = world_x0 + x_idx * VOXEL_SIZE;
+                        ctx->valid_voxel[ptr].y = world_y0 + y_idx * VOXEL_SIZE;
+                        ctx->valid_voxel[ptr].z = world_z0 + z_idx * VOXEL_SIZE;
                         ctx->valid_voxel[ptr].rgb[0] = ctx->color_voxel[3 * voxel_idx + 0];
                         ctx->valid_voxel[ptr].rgb[1] = ctx->color_voxel[3 * voxel_idx + 1];
                         ctx->valid_voxel[ptr].rgb[2] = ctx->color_voxel[3 * voxel_idx + 2];
-                        ctx->L1_voxel_num += 1;
+                        ctx->L0_voxel_num += 1;
                     }
                 }
             }
@@ -200,12 +199,12 @@ __global__ void integrate_L1_kernel(context* ctx, Lock *lock)
 {
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
 
-    if(idx >= ctx->L1_voxel_num) {
+    if(idx >= ctx->L0_voxel_num) {
         return;
     }
 
-    float world_x, world_y, world_z;
     float weight;
+    int tid = threadIdx.x;
 
     __shared__ KRT cam_pose[CAM_NUM];
 
@@ -213,44 +212,34 @@ __global__ void integrate_L1_kernel(context* ctx, Lock *lock)
         memcpy(cam_pose, ctx->krt, CAM_NUM * sizeof(KRT));
     }
 
-    // get parent L0 voxel's idx(x, y, z)
-    int voxel_idx = ctx->L1_voxel_idx[idx];
-    int x_idx = voxel_idx % DIM_X;
-    int y_idx = ((voxel_idx - x_idx) / DIM_X) % DIM_Y;
-    int z_idx = (voxel_idx - x_idx - y_idx * DIM_X) / (DIM_Y * DIM_X);
-
     __shared__ baseVoxel L1_voxel[256][8];
     __shared__ int cnt;
     cnt = 0;
 
     __syncthreads();
 
-    for(int i = 0; i < 2; i++) { // each L0 voxel has 8 L1 voxels
-        for(int j = 0; j < 2; j++) {
-            for(int k = 0; k < 2; k++) {
-                L1_voxel[threadIdx.x][4*i + 2*j + k].x = world_x0 + (float)(2 * (x_idx + i) - 1) * (ctx->voxel_size / 2.0f);
-                L1_voxel[threadIdx.x][4*i + 2*j + k].y = world_y0 + (float)(2 * (y_idx + j) - 1) * (ctx->voxel_size / 2.0f);
-                L1_voxel[threadIdx.x][4*i + 2*j + k].z = world_z0 + (float)(2 * (z_idx + k) - 1) * (ctx->voxel_size / 2.0f);
+    for(int i = 0; i < 8; i++) { // each L0 voxel has 2^3 = 8 L1 voxels
+        L1_voxel[tid][i].x = ctx->valid_voxel[idx].x + (2*(i/4) - 1) * VOXEL_SIZE / 2;
+        L1_voxel[tid][i].y = ctx->valid_voxel[idx].y + (2*((i % 4) / 2) - 1) * VOXEL_SIZE / 2;
+        L1_voxel[tid][i].z = ctx->valid_voxel[idx].z + (2*(i % 2) - 1) * VOXEL_SIZE / 2;
 
-                // compute one voxel's tsdf, weight and color
-                integrate_one_voxel(L1_voxel[threadIdx.x][4*i + 2*j + k].x,
-                                    L1_voxel[threadIdx.x][4*i + 2*j + k].y,
-                                    L1_voxel[threadIdx.x][4*i + 2*j + k].z,
-                                    ctx,
-                                    cam_pose,
-                                    weight,
-                                    L1_voxel[threadIdx.x][4*i + 2*j + k].tsdf,
-                                    L1_voxel[threadIdx.x][4*i + 2*j + k].rgb[0],
-                                    L1_voxel[threadIdx.x][4*i + 2*j + k].rgb[1],
-                                    L1_voxel[threadIdx.x][4*i + 2*j + k].rgb[2]);
-                // copy tsdf and color from shared memory to global memory
-                float tsdf_tmp = (weight < WEIGHT_THRESHOLD) ? 2 * TSDF_THRESHOLD_L0 : L1_voxel[threadIdx.x][4*i + 2*j + k].tsdf;
-                if(tsdf_tmp < TSDF_THRESHOLD_L1) {
-                    atomicAdd(&cnt, 1);
-                }
-                L1_voxel[threadIdx.x][4*i + 2*j + k].tsdf = tsdf_tmp;
-            }
+        // compute one voxel's tsdf, weight and color
+        integrate_one_voxel(L1_voxel[tid][i].x,
+                            L1_voxel[tid][i].y,
+                            L1_voxel[tid][i].z,
+                            ctx,
+                            cam_pose,
+                            weight,
+                            L1_voxel[tid][i].tsdf,
+                            L1_voxel[tid][i].rgb[0],
+                            L1_voxel[tid][i].rgb[1],
+                            L1_voxel[tid][i].rgb[2]);
+        // copy tsdf and color from shared memory to global memory
+        float tsdf_tmp = (weight < WEIGHT_THRESHOLD) ? 2 * TSDF_THRESHOLD_L0 : L1_voxel[tid][i].tsdf;
+        if(tsdf_tmp < TSDF_THRESHOLD_L1) {
+            atomicAdd(&cnt, 1);
         }
+        L1_voxel[tid][i].tsdf = tsdf_tmp;
     }
     __syncthreads();
 
@@ -258,19 +247,21 @@ __global__ void integrate_L1_kernel(context* ctx, Lock *lock)
         lock->lock();
         __threadfence();
         for(int i = 0; i < blockDim.x; i++) {
-            for(int j = 0; j < 8; j++){
-                float tsdf_tmp = L1_voxel[i][j].tsdf;
-                if(abs(tsdf_tmp) < TSDF_THRESHOLD_L1) {
-                    int ptr = ctx->L1_voxel_num + ctx->L2_voxel_num;
+            if(idx < ctx->L0_voxel_num) {
+                for(int j = 0; j < 8; j++) {
+                    float tsdf_tmp = L1_voxel[i][j].tsdf;
+                    if(abs(tsdf_tmp) < TSDF_THRESHOLD_L1) {
+                        int ptr = ctx->L0_voxel_num + ctx->L1_voxel_num;
 
-                    ctx->valid_voxel[ptr].tsdf = L1_voxel[i][j].tsdf;
-                    ctx->valid_voxel[ptr].x = L1_voxel[i][j].x;
-                    ctx->valid_voxel[ptr].y = L1_voxel[i][j].y;
-                    ctx->valid_voxel[ptr].z = L1_voxel[i][j].z;
-                    ctx->valid_voxel[ptr].rgb[0] = L1_voxel[i][j].rgb[0];
-                    ctx->valid_voxel[ptr].rgb[1] = L1_voxel[i][j].rgb[1];
-                    ctx->valid_voxel[ptr].rgb[2] = L1_voxel[i][j].rgb[2];
-                    ctx->L2_voxel_num += 1;
+                        ctx->valid_voxel[ptr].tsdf = L1_voxel[i][j].tsdf;
+                        ctx->valid_voxel[ptr].x = L1_voxel[i][j].x;
+                        ctx->valid_voxel[ptr].y = L1_voxel[i][j].y;
+                        ctx->valid_voxel[ptr].z = L1_voxel[i][j].z;
+                        ctx->valid_voxel[ptr].rgb[0] = L1_voxel[i][j].rgb[0];
+                        ctx->valid_voxel[ptr].rgb[1] = L1_voxel[i][j].rgb[1];
+                        ctx->valid_voxel[ptr].rgb[2] = L1_voxel[i][j].rgb[2];
+                        ctx->L1_voxel_num += 1;
+                    }
                 }
             }
         }

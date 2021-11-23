@@ -14,11 +14,10 @@ context* init_context()
     ctx->resolution[1] = DIM_Y;
     ctx->resolution[2] = DIM_Z;
 
-    ctx->voxel_size = VOXEL_SIZE;
-    ctx->trunc_margin = 5 * ctx->voxel_size;
+    ctx->trunc_margin = 5 * VOXEL_SIZE;
 
     ctx->weight_threshhold = WEIGHT_THRESHOLD;
-    ctx->L1_voxel_num = 0;
+    ctx->L0_voxel_num = 0;
     ctx->L2_voxel_num = 0;
 
     int voxel_num = ctx->resolution[0] * ctx->resolution[1] * ctx->resolution[2];
@@ -30,7 +29,6 @@ context* init_context()
     cudaMalloc((void**)&ctx->in_buf_color, CAM_NUM * WIDTH * HEIGHT * sizeof(uint8_t) * 3);
     cudaMalloc((void**)&ctx->depth, CAM_NUM * WIDTH * HEIGHT * sizeof(float));
     cudaMalloc((void**)&ctx->pcd, 3 * WIDTH * HEIGHT * sizeof(float));
-    cudaMalloc((void**)&ctx->L1_voxel_idx, voxel_num * sizeof(int));
 
     cudaMemset(ctx->tsdf_voxel, 1, voxel_num * sizeof(float));
     cudaMemset(ctx->color_voxel, 0, voxel_num * sizeof(uint8_t) * 3);
@@ -83,7 +81,7 @@ void Integrate(context* ctx, uint8_t *in_buf_depth, uint8_t* in_buf_color)
     integrate_L0_kernel<<<dim3(DIM_Z / 32, DIM_Y / 32), dim3(32, 32)>>>(ctx, lock);
     cudaDeviceSynchronize(); // force cpu to wait util kernel finish
 
-    int block_config = (ctx->L1_voxel_num + 255) / 256;
+    int block_config = (ctx->L0_voxel_num + 255) / 256;
     integrate_L1_kernel<<<block_config, 256>>>(ctx, lock);
     
     HANDLE_ERROR();
@@ -114,13 +112,15 @@ void get_pcd_in_world(context* ctx, uint8_t *in_buf_depth, float *pcd, int cam_i
 
 void memcpy_volume_to_cpu(context* ctx, baseVoxel* voxel_out, int &voxel_num)
 {
-    voxel_num = ctx->L1_voxel_num + ctx->L2_voxel_num;
-    cudaMemcpy(voxel_out, ctx->valid_voxel, voxel_num * sizeof(baseVoxel), cudaMemcpyDeviceToHost);
+    voxel_num = ctx->L0_voxel_num + ctx->L1_voxel_num + ctx->L2_voxel_num;
+    voxel_num = ctx->L1_voxel_num;
+    cudaMemcpy(voxel_out, ctx->valid_voxel + ctx->L0_voxel_num, voxel_num * sizeof(baseVoxel), cudaMemcpyDeviceToHost);
 }
 
 
 void reset_context(context* ctx)
 {
+    ctx->L0_voxel_num = 0;
     ctx->L1_voxel_num = 0;
     ctx->L2_voxel_num = 0;
 }

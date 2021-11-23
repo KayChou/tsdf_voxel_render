@@ -49,7 +49,7 @@ typedef struct context
     uint8_t* in_buf_color;
     float* depth; // depth after dequantization
 
+    int L0_voxel_num;
     int L1_voxel_num;
     int L2_voxel_num;
-    int *L1_voxel_idx;
 } context;

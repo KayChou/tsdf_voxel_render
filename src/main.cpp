@@ -54,6 +54,7 @@ int main(int argc, char** argv)
     memcpy_volume_to_cpu(ctx, voxel_cpu, num_pts);
     save_volume_to_ply(ctx, "../results/fusion.ply", voxel_cpu, num_pts);
 
+    printf("L0 voxel num: %d\n", ctx->L0_voxel_num);
     printf("L1 voxel num: %d\n", ctx->L1_voxel_num);
     printf("L2 voxel num: %d\n", ctx->L2_voxel_num);
 
