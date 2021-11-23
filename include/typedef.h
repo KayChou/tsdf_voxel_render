@@ -10,6 +10,9 @@
 typedef struct baseVoxel
 {
     float tsdf;
+    float x;
+    float y;
+    float z;
     uint8_t rgb[3];
 } baseVoxel;
 
@@ -33,6 +36,8 @@ typedef struct context
 
     float* tsdf_voxel;
     uint8_t* color_voxel;
+
+    baseVoxel* valid_voxel;
 
     float* pcd;
 

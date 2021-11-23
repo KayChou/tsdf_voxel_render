@@ -24,11 +24,12 @@ context* init_context()
 
     cudaMalloc((void**)&ctx->tsdf_voxel, voxel_num * sizeof(float));
     cudaMalloc((void**)&ctx->color_voxel, voxel_num * sizeof(uint8_t) * 3);
+    cudaMalloc((void**)&ctx->valid_voxel, voxel_num * sizeof(baseVoxel));
     cudaMalloc((void**)&ctx->in_buf_depth, CAM_NUM * WIDTH * HEIGHT * sizeof(uint8_t));
     cudaMalloc((void**)&ctx->in_buf_color, CAM_NUM * WIDTH * HEIGHT * sizeof(uint8_t) * 3);
     cudaMalloc((void**)&ctx->depth, CAM_NUM * WIDTH * HEIGHT * sizeof(float));
     cudaMalloc((void**)&ctx->pcd, 3 * WIDTH * HEIGHT * sizeof(float));
-    cudaMallocManaged((void**)&ctx->L1_voxel_idx, voxel_num * sizeof(int));
+    cudaMalloc((void**)&ctx->L1_voxel_idx, voxel_num * sizeof(int));
 
     cudaMemset(ctx->tsdf_voxel, 1, voxel_num * sizeof(float));
     cudaMemset(ctx->color_voxel, 0, voxel_num * sizeof(uint8_t) * 3);
@@ -131,6 +132,8 @@ void reset_context(context* ctx)
 void release_context(context* ctx)
 {
     cudaFree(ctx->tsdf_voxel);
+    cudaFree(ctx->color_voxel);
+    cudaFree(ctx->valid_voxel);
     cudaFree(ctx->in_buf_depth);
     cudaFree(ctx->in_buf_color);
     cudaFree(ctx->depth);

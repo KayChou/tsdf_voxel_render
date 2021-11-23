@@ -12,8 +12,7 @@ typedef struct Lock {
         mutex = 0;
     }
     __device__ void lock(void) {
-        while (atomicCAS(&mutex, 0, 1) != 0) {
-            __nanosleep(100000);
+        while(atomicCAS(&mutex, 0, 1) != 0) {
         }
     }
     __device__ void unlock(void) {

@@ -99,6 +99,7 @@ __global__ void integrate_L0_kernel(context* ctx, Lock *lock)
 {
     int z_voxel = threadIdx.x + blockIdx.x * blockDim.x;
     int y_voxel = threadIdx.y + blockIdx.y * blockDim.y;
+    int cnt;
 
     float world_x, world_y, world_z;
     float weight;
@@ -148,25 +149,24 @@ __global__ void integrate_L0_kernel(context* ctx, Lock *lock)
                 L1_idx[threadIdx.x][threadIdx.y][L1_cnt[threadIdx.x][threadIdx.y]] = voxel_idx;
                 L1_cnt[threadIdx.x][threadIdx.y] += 1;
             }
+            __syncthreads();
         }
 
         __syncthreads(); // wait all threads finish
 
         // count L1 voxels num, if no L1 voxel, then no need to lock since lock is expensive
-        int cnt = 0;
+        cnt = 0;
         for(int i = 0; i < blockDim.x; i++) {
             for(int j = 0; j < blockDim.y; j++) {
                 cnt += L1_cnt[i][j];
             }
         }
         __syncthreads();
-        if(cnt == 0) {
-            continue;
-        }
 
-        if(threadIdx.x == 0 && threadIdx.y == 0) {
+        if(cnt > 0 && threadIdx.x == 0 && threadIdx.y == 0) {
             lock->lock(); // lock, make sure each block runs in serial
-
+            __threadfence(); // this is critical to make sure it is locked
+            
             for(int i = 0; i < blockDim.x; i++) {
                 for(int j = 0; j < blockDim.y; j++) {
                     for(int k = 0; k < L1_cnt[i][j]; k++) {
@@ -179,7 +179,6 @@ __global__ void integrate_L0_kernel(context* ctx, Lock *lock)
         }
         __syncthreads();
     }
-    
 }
 
 
