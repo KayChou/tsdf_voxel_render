@@ -40,7 +40,7 @@ void load_camera_params(context *ctx)
 }
 
 
-void save_volume_to_ply(context *ctx, char *filename, float* tsdf, uint8_t* rgb)
+void save_volume_to_ply(context *ctx, char *filename, baseVoxel* voxels, int num_pts)
 {
     int dim_x = ctx->resolution[0];
     int dim_y = ctx->resolution[1];
@@ -50,13 +50,6 @@ void save_volume_to_ply(context *ctx, char *filename, float* tsdf, uint8_t* rgb)
     printf("threshold: %f %f\n", TSDF_THRESHOLD_L0, ctx->weight_threshhold);
 
     // count total num of points in point cloud
-    int num_pts = 0;
-    for(int i = 0; i < voxel_num; i++) {
-        if(std::abs(tsdf[i]) < TSDF_THRESHOLD_L0) {
-            num_pts++;
-        }
-    }
-
     printf("valid points: %d\n", num_pts);
 
     // Create header for .ply file
@@ -72,19 +65,19 @@ void save_volume_to_ply(context *ctx, char *filename, float* tsdf, uint8_t* rgb)
     fprintf(fp, "property uchar blue\n");
     fprintf(fp, "end_header\n");
 
-    for(int i = 0; i < voxel_num; i++) {
-        if(std::abs(tsdf[i]) < TSDF_THRESHOLD_L0) {
+    for(int i = 0; i < num_pts; i++) {
+        if(std::abs(voxels[i].tsdf) < TSDF_THRESHOLD_L0) {
             int z = floor(i / (dim_x * dim_y));
             int y = floor((i - (z * dim_x * dim_y)) / dim_x);
             int x = i - (z * dim_x * dim_y) - y * dim_x;
             
-            float pt_x = (float)(x * ctx->voxel_size + world_x0) - dim_x * ctx->voxel_size / 2;
-            float pt_y = (float)(y * ctx->voxel_size + world_y0) - dim_y * ctx->voxel_size / 2;
-            float pt_z = (float)(z * ctx->voxel_size + world_z0) - dim_z * ctx->voxel_size / 2;
+            float pt_x = (float)(voxels[i].x);
+            float pt_y = (float)(voxels[i].y);
+            float pt_z = (float)(voxels[i].z);
 
-            uint8_t r = rgb[3 * i + 0];
-            uint8_t g = rgb[3 * i + 1];
-            uint8_t b = rgb[3 * i + 2];
+            uint8_t r = voxels[i].rgb[0];
+            uint8_t g = voxels[i].rgb[1];
+            uint8_t b = voxels[i].rgb[2];
 
             fprintf(fp, "%f ", pt_x);
             fprintf(fp, "%f ", pt_y);

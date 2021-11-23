@@ -50,7 +50,6 @@ typedef struct context
     float* depth; // depth after dequantization
 
     int L1_voxel_num;
-    int *L1_voxel_idx;
-
     int L2_voxel_num;
+    int *L1_voxel_idx;
 } context;

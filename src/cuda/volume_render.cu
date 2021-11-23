@@ -19,6 +19,7 @@ context* init_context()
 
     ctx->weight_threshhold = WEIGHT_THRESHOLD;
     ctx->L1_voxel_num = 0;
+    ctx->L2_voxel_num = 0;
 
     int voxel_num = ctx->resolution[0] * ctx->resolution[1] * ctx->resolution[2];
 
@@ -82,8 +83,8 @@ void Integrate(context* ctx, uint8_t *in_buf_depth, uint8_t* in_buf_color)
     integrate_L0_kernel<<<dim3(DIM_Z / 32, DIM_Y / 32), dim3(32, 32)>>>(ctx, lock);
     cudaDeviceSynchronize(); // force cpu to wait util kernel finish
 
-    int block_config = (ctx->L1_voxel_num + 32) / 32;
-    integrate_L1_kernel<<<block_config, 32>>>(ctx, lock);
+    int block_config = (ctx->L1_voxel_num + 255) / 256;
+    integrate_L1_kernel<<<block_config, 256>>>(ctx, lock);
     
     HANDLE_ERROR();
 
@@ -111,18 +112,17 @@ void get_pcd_in_world(context* ctx, uint8_t *in_buf_depth, float *pcd, int cam_i
 }
 
 
-void memcpy_volume_to_cpu(context* ctx, float* tsdf_out, uint8_t* rgb_out)
+void memcpy_volume_to_cpu(context* ctx, baseVoxel* voxel_out, int &voxel_num)
 {
-    int voxel_num = ctx->resolution[0] * ctx->resolution[1] * ctx->resolution[2];
-
-    cudaMemcpy(tsdf_out, ctx->tsdf_voxel, voxel_num * sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(rgb_out, ctx->color_voxel, voxel_num * sizeof(uint8_t) * 3, cudaMemcpyDeviceToHost);
+    voxel_num = ctx->L1_voxel_num + ctx->L2_voxel_num;
+    cudaMemcpy(voxel_out, ctx->valid_voxel, voxel_num * sizeof(baseVoxel), cudaMemcpyDeviceToHost);
 }
 
 
 void reset_context(context* ctx)
 {
     ctx->L1_voxel_num = 0;
+    ctx->L2_voxel_num = 0;
 }
 
 

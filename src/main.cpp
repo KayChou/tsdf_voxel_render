@@ -14,8 +14,7 @@ int main(int argc, char** argv)
     uint8_t *in_buf_color = new uint8_t[CAM_NUM * WIDTH * HEIGHT * sizeof(uint8_t) * 3];
 
     int voxel_num = ctx->resolution[0] * ctx->resolution[1] * ctx->resolution[2];
-    float* tsdf_cpu = new float[voxel_num];
-    uint8_t* color_cpu = new uint8_t[voxel_num * 3];
+    baseVoxel* voxel_cpu = new baseVoxel[voxel_num];
 
     float* point_cloud = new float[WIDTH * HEIGHT * 3];
 
@@ -51,8 +50,9 @@ int main(int argc, char** argv)
     }
 
     // memcpy volume to CPU
-    memcpy_volume_to_cpu(ctx, tsdf_cpu, color_cpu);
-    save_volume_to_ply(ctx, "../results/fusion.ply", tsdf_cpu, color_cpu);
+    int num_pts;
+    memcpy_volume_to_cpu(ctx, voxel_cpu, num_pts);
+    save_volume_to_ply(ctx, "../results/fusion.ply", voxel_cpu, num_pts);
 
     printf("L1 voxel num: %d\n", ctx->L1_voxel_num);
     printf("L2 voxel num: %d\n", ctx->L2_voxel_num);
@@ -60,8 +60,7 @@ int main(int argc, char** argv)
     release_context(ctx);
     delete [] in_buf_depth;
     delete [] in_buf_color;
-    delete [] tsdf_cpu;
-    delete [] color_cpu;
+    delete [] voxel_cpu;
     delete [] point_cloud;
     return 0;
 }
